@@ -1,12 +1,13 @@
 package com.dilatush.dns;
 
-import com.dilatush.util.Outcome;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSQuestion;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
 import com.dilatush.dns.rr.A;
 import com.dilatush.dns.rr.DNSResourceRecord;
+import com.dilatush.dns.rr.TXT;
+import com.dilatush.util.Outcome;
 
 import java.net.Inet4Address;
 import java.util.ArrayList;
@@ -31,6 +32,19 @@ public class DNSUtil {
     public static List<Inet4Address> extractIPv4Addresses( final List<DNSResourceRecord> _rrs ) {
         List<Inet4Address> result = new ArrayList<>();
         _rrs.stream().filter( (rr) -> rr instanceof A ).forEach( (rr) -> result.add( ((A)rr).address ) );
+        return result;
+    }
+
+
+    /**
+     * Returns a list of all the text found in any TXT records contained in the given list of DNS resource records.
+     *
+     * @param _rrs the list of DNS resource records to search.
+     * @return a list of IPv4 addresses found in any A records contained in the given list of DNS resource records.
+     */
+    public static List<String> extractText( final List<DNSResourceRecord> _rrs ) {
+        List<String> result = new ArrayList<>();
+        _rrs.stream().filter( (rr) -> rr instanceof TXT ).forEach( ( rr) -> result.addAll( ((TXT)rr).ascii ) );
         return result;
     }
 

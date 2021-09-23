@@ -3,7 +3,9 @@
     <CLASSES>
       <root url="jar://$PROJECT_DIR$/../Util/out/artifacts/Util/Util.jar!/" />
     </CLASSES>
-    <JAVADOC />
+    <JAVADOC>
+      <root url="file://$PROJECT_DIR$/../Util/docs" />
+    </JAVADOC>
     <SOURCES />
   </library>
 </component>

@@ -1,19 +1,21 @@
 package com.dilatush.dns;
 
 import com.dilatush.dns.agent.DNSTransport;
+import com.dilatush.dns.message.DNSQuestion;
+import com.dilatush.dns.message.DNSRRType;
 import com.dilatush.util.Checks;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
-import com.dilatush.dns.message.DNSQuestion;
-import com.dilatush.dns.message.DNSRRType;
 
 import java.net.Inet4Address;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.logging.Logger;
 
 import static com.dilatush.dns.DNSUtil.extractIPv4Addresses;
+import static com.dilatush.dns.DNSUtil.extractText;
 import static com.dilatush.dns.agent.DNSQuery.QueryResult;
 import static com.dilatush.dns.agent.DNSTransport.UDP;
 
@@ -106,14 +108,40 @@ public class DNSResolverAPI {
         Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.A );
         if( qo.notOk() )
             return outcome.notOk( qo.msg(), qo.cause() );
+
+        AsyncHandler<List<Inet4Address>> handler = new AsyncHandler<>( _handler, (qr) -> extractIPv4Addresses( qr.response().answers ) );
         DNSQuestion question = qo.info();
-        IPv4Handler handler = new IPv4Handler( _handler );
         return query( question, handler::handler );
     }
 
 
     /**
-     * Synchronously resolve the Internet Protocal version 4 (IPv4) addresses for the given fully-qualified domain name (FQDN), returning an
+     * <p>Asynchronously resolve the text records (TXT) for the given fully-qualified domain name (FQDN), calling the given handler with the result.</p>
+     * <p>Returns a "not ok" outcome if there was a problem initiating network operations to transmit the query to a DNS server.</p>
+     * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
+     * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
+     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more strings.</p>
+     *
+     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet4Address&gt;&gt;&gt;} handler that will be called with the result of this query.
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into one or more IPv4 addresses.
+     * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
+     */
+    public Outcome<?> resolveText( final Consumer<Outcome<List<String>>> _handler, final String _fqdn  ) {
+
+        Checks.required( _fqdn, _handler );
+
+        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.TXT );
+        if( qo.notOk() )
+            return outcome.notOk( qo.msg(), qo.cause() );
+
+        AsyncHandler<List<String>> handler = new AsyncHandler<>( _handler, (qr) -> extractText( qr.response().answers ) );
+        DNSQuestion question = qo.info();
+        return query( question, handler::handler );
+    }
+
+
+    /**
+     * Synchronously resolve the Internet Protocol version 4 (IPv4) addresses for the given fully-qualified domain name (FQDN), returning an
      * {@link Outcome Outcome&lt;List&lt;Inet4Address&gt;&gt;} with the result.  The outcome will be "not ok" if there was a problem querying other DNS servers, or if the FQDN
      * does not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv4 addresses.
      *
@@ -128,14 +156,10 @@ public class DNSResolverAPI {
         if( qo.notOk() )
             return ipv4Outcome.notOk( qo.msg(), qo.cause() );
 
-        SyncHandler handler = new SyncHandler();
+        SyncHandler<List<Inet4Address>> handler = new SyncHandler<>( (qr) -> extractIPv4Addresses( qr.response().answers ) );
         DNSQuestion question = qo.info();
         query( question, handler::handler );
-        handler.waitForCompletion();
-
-        return handler.qr.ok()
-                ? ipv4Outcome.ok( extractIPv4Addresses( handler.qr.info().response().answers ) )
-                : ipv4Outcome.notOk( handler.qr.msg(), handler.qr.cause() );
+        return handler.waitForCompletion();
     }
 
 
@@ -167,44 +191,77 @@ public class DNSResolverAPI {
 
 
     /**
-     *
+     *  Helper class that accepts the result of an asynchronous query, processes the result into an outcome of the desired type, and calls the API user's handler.
      */
-    private static class IPv4Handler {
+    private static class AsyncHandler<T> {
 
-        private final Consumer<Outcome<List<Inet4Address>>> ipv4Handler;
-        private       Outcome<QueryResult> qr;
+        private final Outcome.Forge<T>        asyncOutcome = new Outcome.Forge<>();
+        private final Consumer<Outcome<T>>    handler;  // the handler supplied by the API user for a particular method...
+        private final Function<QueryResult,T> munger;   // the function that processes the answers into the desired type...
 
-        private IPv4Handler( final Consumer<Outcome<List<Inet4Address>>> _ipv4Handler ) {
-            ipv4Handler = _ipv4Handler;
+
+        /**
+         * Creates a new instance of this class with the given handler and munger.
+         *
+         * @param _handler The handler supplied by the API user for a particular method.
+         * @param _munger The function that processes the answers into the desired type.
+         */
+        private AsyncHandler( final Consumer<Outcome<T>> _handler, final Function<QueryResult,T> _munger ) {
+            handler = _handler;
+            munger  = _munger;
         }
 
+
+        /**
+         * The handler for the result of a call to one of the {@link DNSResolver} query methods.
+         *
+         * @param _qr The result of a call to one of the {@link DNSResolver} query methods.
+         */
         private void handler( final Outcome<QueryResult> _qr ) {
 
-            ipv4Handler.accept(
-                    _qr.ok()
-                    ? ipv4Outcome.ok( extractIPv4Addresses( _qr.info().response().answers ))
-                    : ipv4Outcome.notOk( _qr.msg(), _qr.cause() )
+            // we're sending the result back as an {@link Outcome} of the desired type...
+            handler.accept(
+                    _qr.ok()                                                 // how we build the outcome depends on whether it was ok...
+                            ? asyncOutcome.ok( munger.apply( _qr.info() ) )  // it was ok, so munge the QueryResult to get the type we want...
+                            : asyncOutcome.notOk( _qr.msg(), _qr.cause() )   // it was not ok, so just relay the message and cause...
             );
         }
     }
 
 
-    private static class SyncHandler {
+    /**
+     * Helper class that provides a semaphore for the user's thread to block on until the query has completed, accepts the result of an asynchronous query, then processes the
+     * result into an outcome of the desired type and passes that to the user's thread when it resumes.
+     */
+    private static class SyncHandler<T> {
 
-        private Outcome<QueryResult> qr;
-        private final Semaphore waiter = new Semaphore( 0 );
+        private final Outcome.Forge<T>        syncOutcome = new Outcome.Forge<>();
+        private       Outcome<QueryResult>    qr;
+        private final Semaphore               waiter = new Semaphore( 0 );
+        private final Function<QueryResult,T> munger;   // the function that processes the answers into the desired type...
+
+
+        private SyncHandler( final Function<QueryResult,T> _munger ) {
+            munger = _munger;
+        }
+
 
         private void handler( final Outcome<QueryResult> _qr ) {
             qr = _qr;
             waiter.release();
         }
 
-        private void waitForCompletion() {
+        private Outcome<T> waitForCompletion() {
+
             try {
                 waiter.acquire();
             } catch( InterruptedException _e ) {
                 // naught to do...
             }
+
+            return qr.ok()                                         // how we build the outcome depends on whether it was ok...
+                    ? syncOutcome.ok( munger.apply( qr.info() ) )  // it was ok, so munge the QueryResult to get the type we want...
+                    : syncOutcome.notOk( qr.msg(), qr.cause() );   // it was not ok, so just relay the message and cause...
         }
     }
 }

@@ -161,8 +161,8 @@ public class DNSIterativeQuery extends DNSQuery {
 
         basicOK();
 
-        // if we have some answers, then let's see if we're done, or if we're resolving a CNAME chain...
-        if( !responseMessage.answers.isEmpty() ) {
+        // if we have some answers (or we have none, but the response was authoritative), then let's see if we're done, or if we're resolving a CNAME chain...
+        if( !responseMessage.answers.isEmpty() || responseMessage.authoritativeAnswer ) {
             handleAnswers();
             return;
         }
@@ -357,16 +357,23 @@ public class DNSIterativeQuery extends DNSQuery {
         answers.addAll( responseMessage.answers );
 
         // There are several possible scenarios here, which must be checked in the order given:
-        // 1. There are one or more answers, and the desired type is ANY or CNAME, or they're all the desired type. In this case, we accumulate all the answers, and we're done.
-        // 2. There are two or more answers, consisting of one or more CNAME records followed by one or more answers of the desired type.  In this case, we check for proper
+        // 1. There are zero answers, which means the query was answered but there were no results.
+        // 2. There are one or more answers, and the desired type is ANY or CNAME, or they're all the desired type. In this case, we accumulate all the answers, and we're done.
+        // 3. There are two or more answers, consisting of one or more CNAME records followed by one or more answers of the desired type.  In this case, we check for proper
         //    CNAME chaining, accumulate all the answers, and we're done.
-        // 3. There are one or more answers, all of which are CNAME records.  In this case, the last CNAME is a referral, we accumulate all the answers, check for a CNAME
+        // 4. There are one or more answers, all of which are CNAME records.  In this case, the last CNAME is a referral, we accumulate all the answers, check for a CNAME
         //    loop (which is an error, and then fire off a sub-query to resolve the referral.  The results of the sub-query are evaluated exactly as the results of the
         //    first query.
-        // 4. There are one or more answers which are neither CNAME records nor the desired type.  This is an error.
+        // 5. There are one or more answers which are neither CNAME records nor the desired type.  This is an error.
 
         // now we do a little analysis on our accumulated answers, so we can figure out what to do next...
         AnswersAnalysis aa = analyzeAnswers();
+
+        // if we got no answers, we're done...
+        if( responseMessage.answers.size() == 0 ) {
+            doneWithAnswers();
+            return;
+        }
 
         // If the desired type is ANY or CNAME, or all the records are the type we want, then we're done...
         if( (question.qtype == DNSRRType.ANY) || (question.qtype == DNSRRType.CNAME) || (aa.desiredCount == answers.size())) {
