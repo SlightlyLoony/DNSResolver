@@ -3,6 +3,8 @@ package com.dilatush.dns;
 // TODO: Handle responses with no answers (see RFC 2308)
 // TODO: Get rid of protected everywhere
 // TODO: Move DNS Resolver into its own project
+// TODO: test whether a query terminates properly if the name is found, but none of the desired records are present
+// TODO: Change terminology from "recursive" and "iterative" to "forwarding" and "recursive"
 // TODO: Comments and Javadocs...
 
 
@@ -12,7 +14,6 @@ import com.dilatush.dns.message.DNSMessage;
 import com.dilatush.dns.message.DNSOpCode;
 import com.dilatush.dns.message.DNSQuestion;
 import com.dilatush.dns.message.DNSRRType;
-import com.dilatush.dns.rr.CNAME;
 import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
@@ -25,7 +26,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
-import static com.dilatush.dns.DNSServerSelectionStrategy.*;
 import static com.dilatush.dns.IPVersion.*;
 import static com.dilatush.dns.agent.DNSQuery.QueryResult;
 import static com.dilatush.dns.message.DNSRRType.*;
@@ -107,7 +107,7 @@ public class DNSResolver {
     }
 
 
-    // recursive query...
+    // forwarded query...
     // only one question per query!
     // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
     public Outcome<?> query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport,
@@ -127,7 +127,7 @@ public class DNSResolver {
     }
 
 
-    // iterative query...
+    // recursive query...
     // only one question per query!
     // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
     public Outcome<?> query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport ) {
@@ -266,6 +266,16 @@ public class DNSResolver {
                 yield result;
             }
         };
+    }
+
+
+    /**
+     * Returns {@code true} if this resolver has been configured with one or more DNS servers that it can forward to.
+     *
+     * @return {@code true} if this resolver has been configured with one or more DNS servers that it can forward to.
+     */
+    public boolean hasServers() {
+        return agentParams.size() > 0;
     }
 
 

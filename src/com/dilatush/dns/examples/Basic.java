@@ -11,7 +11,7 @@ import java.util.List;
 import static com.dilatush.util.General.breakpoint;
 
 /**
- * Create a very simple DNS resolver that can use Google's recursive DNS server to resolve IP addresses.
+ * Create a very simple DNS resolver that can use the public recursive DNS servers from Google and Cloudflare to resolve IP addresses.
  */
 @SuppressWarnings( "unused" )
 public class Basic {
@@ -22,7 +22,8 @@ public class Basic {
 
         // create a DNS resolver that knows about Google's recursive DNS server...
         DNSResolver.Builder builder = new DNSResolver.Builder();
-        builder.addDNSServer( new InetSocketAddress( "8.8.8.8", 53 ), 2000, 0, "Google" );
+        builder.addDNSServer( new InetSocketAddress( "8.8.8.8", 53 ), 2000, 0, "Google"     );
+        builder.addDNSServer( new InetSocketAddress( "1.1.1.1", 53 ), 1500, 0, "Cloudflare" );
         Outcome<DNSResolver> ro = builder.getDNSResolver();
         if( ro.notOk() ) {
             System.out.println( "Could not build resolver: " + ro.msg() );

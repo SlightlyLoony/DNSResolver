@@ -20,8 +20,8 @@ import static com.dilatush.util.General.breakpoint;
 @SuppressWarnings( "unused" )
 public class IterativeQuery {
 
-    private static Semaphore                waiter  = new Semaphore( 0 );
-    private static List<List<Inet4Address>> results = new ArrayList<>();
+    private final static Semaphore                waiter  = new Semaphore( 0 );
+    private final static List<List<Inet4Address>> results = new ArrayList<>();
 
     public static void main( final String[] _args ) throws InterruptedException {
 
@@ -42,17 +42,20 @@ public class IterativeQuery {
 
         // resolve a domain name twice in a row (testing cache)...
         long startTime = System.currentTimeMillis();
-        api.resolveIPv4Addresses( IterativeQuery::handler, "www.hp.com" );  // we're ignoring the return value, which should always be "ok"...
+        Outcome<?> qo = api.resolveIPv4Addresses( IterativeQuery::handler, "www.cnn.com" );
+        if( qo.notOk() ) throw new IllegalStateException( "Unexpected result from query" );
         waiter.acquire();
         System.out.println( "First time: " + (System.currentTimeMillis() - startTime) );
         startTime = System.currentTimeMillis();
-        api.resolveIPv4Addresses( IterativeQuery::handler, "www.hp.com" );  // we're ignoring the return value, which should always be "ok"...
+        qo = api.resolveIPv4Addresses( IterativeQuery::handler, "www.cnn.com" );  // we're ignoring the return value, which should always be "ok"...
+        if( qo.notOk() ) throw new IllegalStateException( "Unexpected result from query" );
         waiter.acquire();
         System.out.println( "Second time: " + (System.currentTimeMillis() - startTime) );
 
         // now do a bunch of concurrent resolutions...
         String[] domains = new String[] {
                 "www.cnn.com",
+                "rock.dilatush.com",
                 "www.hp.com",
                 "www.servicenow.com",
                 "www.paradiseweather.info",
@@ -64,18 +67,23 @@ public class IterativeQuery {
         };
         Iterator<String> it = Arrays.stream( domains ).iterator();
         while( it.hasNext() ) {
-            api.resolveIPv4Addresses( IterativeQuery::handler, it.next() );
+            qo = api.resolveIPv4Addresses( IterativeQuery::handler, it.next() );
+            if( qo.notOk() ) throw new IllegalStateException( "Unexpected result from query" );
         }
         waiter.acquire( domains.length );
-        results.forEach( (ipa) -> System.out.println( ipa.toString()) );
+        results.forEach( (ipa) -> {if( ipa != null ) System.out.println( ipa.toString());} );
 
         breakpoint();
     }
 
     private static void handler( final Outcome<List<Inet4Address>> _outcome ) {
-        if( _outcome.info() == null )
+        if( _outcome.notOk() ) {
             System.out.println( _outcome.msg() );
+            waiter.release();
+            return;
+        }
         results.add( _outcome.info() );
+        _outcome.info().forEach( (ip) -> System.out.println( ip.toString() ) );
         waiter.release();
         breakpoint();
     }
