@@ -1,8 +1,8 @@
 package com.dilatush.dns.examples;
 
-import com.dilatush.util.Outcome;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
+import com.dilatush.util.Outcome;
 
 import java.net.Inet4Address;
 import java.net.InetSocketAddress;
@@ -39,7 +39,7 @@ public class Basic {
         Outcome<List<Inet4Address>> r3a = api.resolveIPv4Addresses( "www.paradiseweather.info" );
         Outcome<List<Inet4Address>> r4a = api.resolveIPv4Addresses( "www.aa.com" );
         Outcome<List<Inet4Address>> r5a = api.resolveIPv4Addresses( "www.paris.info" );
-        Outcome<List<Inet4Address>> r6a = api.resolveIPv4Addresses( "www.hamburger.com" );
+        Outcome<List<Inet4Address>> r6a = api.resolveIPv4Addresses( "yahoo.com" );
 
         // now we clear the cache and time a new run...
         resolver.clear();
@@ -50,7 +50,7 @@ public class Basic {
         Outcome<List<Inet4Address>> r3b = api.resolveIPv4Addresses( "www.paradiseweather.info" );
         Outcome<List<Inet4Address>> r4b = api.resolveIPv4Addresses( "www.aa.com" );
         Outcome<List<Inet4Address>> r5b = api.resolveIPv4Addresses( "www.paris.info" );
-        Outcome<List<Inet4Address>> r6b = api.resolveIPv4Addresses( "www.hamburger.com" );
+        Outcome<List<Inet4Address>> r6b = api.resolveIPv4Addresses( "yahoo.com" );
 
         System.out.println( "Uncached resolution time (ms): " + (System.currentTimeMillis() - startTime));
 
@@ -62,7 +62,7 @@ public class Basic {
         Outcome<List<Inet4Address>> r3c = api.resolveIPv4Addresses( "www.paradiseweather.info" );
         Outcome<List<Inet4Address>> r4c = api.resolveIPv4Addresses( "www.aa.com" );
         Outcome<List<Inet4Address>> r5c = api.resolveIPv4Addresses( "www.paris.info" );
-        Outcome<List<Inet4Address>> r6c = api.resolveIPv4Addresses( "www.hamburger.com" );
+        Outcome<List<Inet4Address>> r6c = api.resolveIPv4Addresses( "yahoo.com" );
 
         System.out.println( "Cached resolution time (ms): " + (System.currentTimeMillis() - startTime));
 

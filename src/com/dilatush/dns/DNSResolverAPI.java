@@ -109,7 +109,7 @@ public class DNSResolverAPI {
         if( qo.notOk() )
             return outcome.notOk( qo.msg(), qo.cause() );
 
-        AsyncHandler<List<Inet4Address>> handler = new AsyncHandler<>( _handler, (qr) -> extractIPv4Addresses( qr.response().answers ) );
+        AsyncHandler<List<Inet4Address>> handler = new AsyncHandler<>( _handler, (qr) -> extractIPv4Addresses( qr.response().answers, _fqdn ) );
         DNSQuestion question = qo.info();
         return query( question, handler::handler );
     }
@@ -156,7 +156,7 @@ public class DNSResolverAPI {
         if( qo.notOk() )
             return ipv4Outcome.notOk( qo.msg(), qo.cause() );
 
-        SyncHandler<List<Inet4Address>> handler = new SyncHandler<>( (qr) -> extractIPv4Addresses( qr.response().answers ) );
+        SyncHandler<List<Inet4Address>> handler = new SyncHandler<>( (qr) -> extractIPv4Addresses( qr.response().answers, _fqdn ) );
         DNSQuestion question = qo.info();
         query( question, handler::handler );
         return handler.waitForCompletion();

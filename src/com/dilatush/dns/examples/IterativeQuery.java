@@ -57,7 +57,7 @@ public class IterativeQuery {
                 "www.cnn.com",
                 "rock.dilatush.com",
                 "www.hp.com",
-                "www.servicenow.com",
+                "yahoo.com",
                 "www.paradiseweather.info",
                 "news.google.com",
                 "www.qq.com",
