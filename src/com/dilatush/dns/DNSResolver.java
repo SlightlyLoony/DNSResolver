@@ -2,8 +2,8 @@ package com.dilatush.dns;
 
 // TODO: Handle responses with no answers (see RFC 2308)
 // TODO: Get rid of protected everywhere
-// TODO: Move DNS Resolver into its own project
-// TODO: test whether a query terminates properly if the name is found, but none of the desired records are present
+// TODO: it would be nice to hae a way to return an enum with the error type, if there was an error -- ah, could be done with an exception...
+// TODO:   this would make it worthwhile to refactor everything that returns "not ok"...
 // TODO: Change terminology from "recursive" and "iterative" to "forwarding" and "recursive"
 // TODO: Comments and Javadocs...
 
@@ -120,7 +120,7 @@ public class DNSResolver {
 
         List<AgentParams> agents = getAgents( _serverSelection );
 
-        DNSQuery query = new DNSRecursiveQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), agents, _handler );
+        DNSQuery query = new DNSForwardedQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), agents, _handler );
 
         // TODO: call handler on failure...
         return query.initiate( _initialTransport );
@@ -137,7 +137,7 @@ public class DNSResolver {
         if( resolveFromCache( _question, _handler ) )
             return outcome.ok();
 
-        DNSQuery query = new DNSIterativeQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), _handler );
+        DNSQuery query = new DNSRecursiveQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), _handler );
 
         return query.initiate( _initialTransport );
     }

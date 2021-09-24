@@ -1,6 +1,6 @@
 package com.dilatush.dns;
 
-public class DNSException extends Exception {
+public abstract class DNSException extends Exception {
 
     public DNSException( final String message ) {
         super( message );

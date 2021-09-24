@@ -1,10 +1,8 @@
 package com.dilatush.dns.agent;
 
-import com.dilatush.util.ExecutorService;
-import com.dilatush.util.General;
-import com.dilatush.util.Outcome;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolver.AgentParams;
+import com.dilatush.dns.DNSServerException;
 import com.dilatush.dns.cache.DNSCache;
 import com.dilatush.dns.message.DNSMessage;
 import com.dilatush.dns.message.DNSQuestion;
@@ -12,6 +10,9 @@ import com.dilatush.dns.message.DNSResponseCode;
 import com.dilatush.dns.rr.A;
 import com.dilatush.dns.rr.AAAA;
 import com.dilatush.dns.rr.DNSResourceRecord;
+import com.dilatush.util.ExecutorService;
+import com.dilatush.util.General;
+import com.dilatush.util.Outcome;
 
 import java.net.InetAddress;
 import java.util.ArrayList;
@@ -21,9 +22,9 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static com.dilatush.util.General.isNull;
 import static com.dilatush.dns.agent.DNSTransport.TCP;
 import static com.dilatush.dns.agent.DNSTransport.UDP;
+import static com.dilatush.util.General.isNull;
 
 /**
  * Abstract base class for query implementations.
@@ -207,7 +208,9 @@ public abstract class DNSQuery {
 
         // if we get here, we ran out of servers to try, so report a sad outcome and leave...
         queryLog.log("No more DNS servers to try" );
-        handler.accept( queryOutcome.notOk( "No more DNS servers to try; last one responded with " + _responseCode, null,
+        handler.accept( queryOutcome.notOk(
+                "No more DNS servers to try; last one responded with " + _responseCode,
+                new DNSServerException( _responseCode.name(), _responseCode ),
                 new QueryResult( queryMessage, null, queryLog ) ) );
         activeQueries.remove( (short) id );
     }

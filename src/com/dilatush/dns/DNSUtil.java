@@ -4,13 +4,12 @@ import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSQuestion;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
-import com.dilatush.dns.rr.A;
-import com.dilatush.dns.rr.DNSResourceRecord;
-import com.dilatush.dns.rr.TXT;
+import com.dilatush.dns.rr.*;
 import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
 
 import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,6 +54,35 @@ public class DNSUtil {
 
 
     /**
+     * Returns a list of all the IPv6 addresses found in any AAAA records contained in the given list of DNS resource records.  The resulting {@link Inet6Address} instances
+     * will have a hostname with the given queried FQDN, effectively hiding any CNAME chain that was followed.
+     *
+     * @param _rrs The list of DNS resource records to search.
+     * @param _queriedFQDN The originally queried FQDN (before any CNAME chains were followed).
+     * @return A list of IPv6 addresses found in any A records contained in the given list of DNS resource records.
+     */
+    public static List<Inet6Address> extractIPv6Addresses( final List<DNSResourceRecord> _rrs, final String _queriedFQDN ) {
+
+        Checks.required( _rrs, _queriedFQDN );
+
+        List<Inet6Address> result = new ArrayList<>();
+        _rrs.stream()
+                .filter( (rr) -> rr instanceof AAAA )
+                .forEach( (rr) -> {
+                    Inet6Address ip = ((AAAA)rr).address;
+                    try {
+                        result.add( (Inet6Address) Inet6Address.getByAddress( _queriedFQDN, ip.getAddress() ) );
+                    }
+                    catch( UnknownHostException _e ) {
+                        // this should be impossible...
+                        throw new IllegalStateException( "IP address was wrong length" );
+                    }
+                } );
+        return result;
+    }
+
+
+    /**
      * Returns a list of all the text found in any TXT records contained in the given list of DNS resource records.  The data in the TXT records are decoded as ASCII.
      *
      * @param _rrs The list of DNS resource records to search.
@@ -65,6 +93,21 @@ public class DNSUtil {
         _rrs.stream()
                 .filter( (rr) -> rr instanceof TXT )
                 .forEach( ( rr) -> result.addAll( ((TXT)rr).ascii ) );
+        return result;
+    }
+
+
+    /**
+     * Returns a list of all the domain names of name server found in NS records contained in the given list of DNS resource records.
+     *
+     * @param _rrs The list of DNS resource records to search.
+     * @return A list of all the domain names of name server found in NS records contained in the given list of DNS resource records.
+     */
+    public static List<String> extractNameServers( final List<DNSResourceRecord> _rrs ) {
+        List<String> result = new ArrayList<>();
+        _rrs.stream()
+                .filter( (rr) -> rr instanceof NS )
+                .forEach( ( rr) -> result.add( ((NS)rr).nameServer.text ) );
         return result;
     }
 

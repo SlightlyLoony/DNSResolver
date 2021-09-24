@@ -1,7 +1,8 @@
 package com.dilatush.dns.agent;
 
-import com.dilatush.util.ExecutorService;
 import com.dilatush.dns.DNSException;
+import com.dilatush.dns.DNSResolverException;
+import com.dilatush.util.ExecutorService;
 
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
@@ -50,7 +51,7 @@ public class DNSNIO {
             selector = Selector.open();
         }
         catch( IOException _e ) {
-            throw new DNSException( "Problem opening selector", _e );
+            throw new DNSResolverException( "Problem opening selector", _e );
         }
 
         // use the alternate executor if it was supplied; otherwise, use a default executor...

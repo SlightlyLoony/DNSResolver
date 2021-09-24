@@ -5,7 +5,6 @@ import com.dilatush.util.ExecutorService;
 import com.dilatush.util.Outcome;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.message.DNSMessage;
-import com.dilatush.dns.rr.DNSTimeoutException;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;

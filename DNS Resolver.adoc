@@ -28,6 +28,9 @@ There are a number of features that one might expect in a DNS resolver that this
 == Why did the author inflict this monstrosity on us?
 It all started with the desire to make a UDP "pinger" that could test connectivity to a known IP address.  DNS servers, by their very nature, are at well-known IP addresses, so they make a good target.  UDP being a connectionless protocol, to implement a pinger I needed something that could send a well-formed query to the DNS server and listen for a response.  It seemed a small step to go from that to an actual fully-formed DNS resolver.  That turned out to be a rather large small step, but ... here it is.
 
+== Terminology
+The terminology one can find being used to describe DNS is so confusing that this author believes it's one of the main challenges in understand how DNS works.
+
 == Theory of Operation
 
 === The life of a query

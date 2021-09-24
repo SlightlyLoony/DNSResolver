@@ -1,4 +1,4 @@
-package com.dilatush.dns.rr;
+package com.dilatush.dns.agent;
 
 import com.dilatush.dns.DNSException;
 

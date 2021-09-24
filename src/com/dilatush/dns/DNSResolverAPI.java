@@ -8,14 +8,14 @@ import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
 
 import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Logger;
 
-import static com.dilatush.dns.DNSUtil.extractIPv4Addresses;
-import static com.dilatush.dns.DNSUtil.extractText;
+import static com.dilatush.dns.DNSUtil.*;
 import static com.dilatush.dns.agent.DNSQuery.QueryResult;
 import static com.dilatush.dns.agent.DNSTransport.UDP;
 
@@ -39,7 +39,7 @@ public class DNSResolverAPI {
     private static final Logger LOGGER = General.getLogger();
 
     private static final Outcome.Forge<?>                  outcome     = new Outcome.Forge<>();
-    private static final Outcome.Forge<List<Inet4Address>> ipv4Outcome = new Outcome.Forge<>();
+//    private static final Outcome.Forge<List<Inet4Address>> ipv4Outcome = new Outcome.Forge<>();
 
     /** The {@link DNSResolver} wrapped by this instance. */
     public final DNSResolver        resolver;
@@ -98,20 +98,49 @@ public class DNSResolverAPI {
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv4 addresses.</p>
      *
      * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet4Address&gt;&gt;&gt;} handler that will be called with the result of this query.
-     * @param _fqdn The FQDN (such as "www.google.com") to resolve into one or more IPv4 addresses.
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv4 addresses.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
     public Outcome<?> resolveIPv4Addresses( final Consumer<Outcome<List<Inet4Address>>> _handler, final String _fqdn  ) {
 
         Checks.required( _fqdn, _handler );
 
-        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.A );
-        if( qo.notOk() )
-            return outcome.notOk( qo.msg(), qo.cause() );
-
+        // set up the handler that will process the raw results of the query...
         AsyncHandler<List<Inet4Address>> handler = new AsyncHandler<>( _handler, (qr) -> extractIPv4Addresses( qr.response().answers, _fqdn ) );
-        DNSQuestion question = qo.info();
-        return query( question, handler::handler );
+
+        // get the question we're going to ask the DNS...
+        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.A );
+        if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
+
+        // fire off the query...
+        return query( qo.info(), handler::handler );
+    }
+
+
+    /**
+     * <p>Asynchronously resolve the Internet Protocol version 6 (IPv6) addresses for the given fully-qualified domain name (FQDN), calling the given handler with the result.</p>
+     * <p>Returns a "not ok" outcome if there was a problem initiating network operations to transmit the query to a DNS server.</p>
+     * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
+     * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
+     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv4 addresses.</p>
+     *
+     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv6 addresses.
+     * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
+     */
+    public Outcome<?> resolveIPv6Addresses( final Consumer<Outcome<List<Inet6Address>>> _handler, final String _fqdn  ) {
+
+        Checks.required( _fqdn, _handler );
+
+        // set up the handler that will process the raw results of the query...
+        AsyncHandler<List<Inet6Address>> handler = new AsyncHandler<>( _handler, ( qr) -> extractIPv6Addresses( qr.response().answers, _fqdn ) );
+
+        // get the question we're going to ask the DNS...
+        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.AAAA );
+        if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
+
+        // fire off the query...
+        return query( qo.info(), handler::handler );
     }
 
 
@@ -122,7 +151,7 @@ public class DNSResolverAPI {
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more strings.</p>
      *
-     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet4Address&gt;&gt;&gt;} handler that will be called with the result of this query.
+     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;String&gt;&gt;&gt;} handler that will be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into one or more IPv4 addresses.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
@@ -130,13 +159,42 @@ public class DNSResolverAPI {
 
         Checks.required( _fqdn, _handler );
 
-        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.TXT );
-        if( qo.notOk() )
-            return outcome.notOk( qo.msg(), qo.cause() );
-
+        // set up the handler that will process the raw results of the query...
         AsyncHandler<List<String>> handler = new AsyncHandler<>( _handler, (qr) -> extractText( qr.response().answers ) );
-        DNSQuestion question = qo.info();
-        return query( question, handler::handler );
+
+        // get the question we're going to ask the DNS...
+        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.TXT );
+        if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
+
+        // fire off the query...
+        return query( qo.info(), handler::handler );
+    }
+
+
+    /**
+     * <p>Asynchronously resolve the domain names of the name servers for the given fully-qualified domain name (FQDN), calling the given handler with the result.</p>
+     * <p>Returns a "not ok" outcome if there was a problem initiating network operations to transmit the query to a DNS server.</p>
+     * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
+     * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
+     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more strings.</p>
+     *
+     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;String&gt;&gt;&gt;} handler that will be called with the result of this query.
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into one or more IPv4 addresses.
+     * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
+     */
+    public Outcome<?> resolveNameServers( final Consumer<Outcome<List<String>>> _handler, final String _fqdn  ) {
+
+        Checks.required( _fqdn, _handler );
+
+        // set up the handler that will process the raw results of the query...
+        AsyncHandler<List<String>> handler = new AsyncHandler<>( _handler, (qr) -> extractNameServers( qr.response().answers ) );
+
+        // get the question we're going to ask the DNS...
+        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.NS );
+        if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
+
+        // fire off the query...
+        return query( qo.info(), handler::handler );
     }
 
 
@@ -145,20 +203,72 @@ public class DNSResolverAPI {
      * {@link Outcome Outcome&lt;List&lt;Inet4Address&gt;&gt;} with the result.  The outcome will be "not ok" if there was a problem querying other DNS servers, or if the FQDN
      * does not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv4 addresses.
      *
-     * @param _fqdn The FQDN (such as "www.google.com") to resolve into one or more IPv4 addresses.
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv4 addresses.
      * @return The {@link Outcome Outcome&lt;List&lt;Inet4Address&gt;&gt;} with the result of this query.
      */
     public Outcome<List<Inet4Address>> resolveIPv4Addresses( final String _fqdn ) {
 
         Checks.required( _fqdn );
 
-        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.A );
-        if( qo.notOk() )
-            return ipv4Outcome.notOk( qo.msg(), qo.cause() );
-
+        // set up the handler that will process the raw results of the query...
         SyncHandler<List<Inet4Address>> handler = new SyncHandler<>( (qr) -> extractIPv4Addresses( qr.response().answers, _fqdn ) );
-        DNSQuestion question = qo.info();
-        query( question, handler::handler );
+
+        // get the question we're going to ask the DNS...
+        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.A );
+        if( qo.notOk() ) return handler.syncOutcome.notOk( qo.msg(), qo.cause() );
+
+        // fire off the query...
+        query( qo.info(), handler::handler );
+        return handler.waitForCompletion();
+    }
+
+
+    /**
+     * Synchronously resolve the strings in TXT records for the given fully-qualified domain name (FQDN), returning an
+     * {@link Outcome Outcome&lt;List&lt;String&gt;&gt;} with the result.  The outcome will be "not ok" if there was a problem querying other DNS servers, or if the FQDN
+     * does not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more strings.
+     *
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into one or more IPv4 addresses.
+     * @return The {@link Outcome Outcome&lt;List&lt;String&gt;&gt;} with the result of this query.
+     */
+    public Outcome<List<String>> resolveText( final String _fqdn ) {
+
+        Checks.required( _fqdn );
+
+        // set up the handler that will process the raw results of the query...
+        SyncHandler<List<String>> handler = new SyncHandler<>( (qr) -> extractText( qr.response().answers ) );
+
+        // get the question we're going to ask the DNS...
+        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.TXT );
+        if( qo.notOk() ) return handler.syncOutcome.notOk( qo.msg(), qo.cause() );
+
+        // fire off the query...
+        query( qo.info(), handler::handler );
+        return handler.waitForCompletion();
+    }
+
+
+    /**
+     * Synchronously resolve the domain names of the name servers for the given fully-qualified domain name (FQDN), returning an
+     * {@link Outcome Outcome&lt;List&lt;String&gt;&gt;} with the result.  The outcome will be "not ok" if there was a problem querying other DNS servers, or if the FQDN
+     * does not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more strings.
+     *
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into one or more IPv4 addresses.
+     * @return The {@link Outcome Outcome&lt;List&lt;String&gt;&gt;} with the result of this query.
+     */
+    public Outcome<List<String>> resolveNameServers( final String _fqdn ) {
+
+        Checks.required( _fqdn );
+
+        // set up the handler that will process the raw results of the query...
+        SyncHandler<List<String>> handler = new SyncHandler<>( (qr) -> extractNameServers( qr.response().answers ) );
+
+        // get the question we're going to ask the DNS...
+        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.NS );
+        if( qo.notOk() ) return handler.syncOutcome.notOk( qo.msg(), qo.cause() );
+
+        // fire off the query...
+        query( qo.info(), handler::handler );
         return handler.waitForCompletion();
     }
 
