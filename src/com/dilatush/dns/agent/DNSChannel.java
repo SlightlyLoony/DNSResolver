@@ -1,9 +1,10 @@
 package com.dilatush.dns.agent;
 
+import com.dilatush.dns.message.DNSMessage;
+import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
-import com.dilatush.dns.message.DNSMessage;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -13,8 +14,6 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import static com.dilatush.util.General.isNull;
 
 public abstract class DNSChannel {
 
@@ -32,8 +31,7 @@ public abstract class DNSChannel {
 
     protected DNSChannel( final DNSServerAgent _agent, final DNSNIO _nio, final ExecutorService _executor, final InetSocketAddress _serverAddress ) {
 
-        if( isNull( _agent, _nio, _executor, _serverAddress ) )
-            throw new IllegalArgumentException( "Required argument(s) are missing" );
+        Checks.required( _agent, _nio, _executor, _serverAddress );
 
         agent         = _agent;
         nio           = _nio;

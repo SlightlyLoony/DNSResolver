@@ -4,12 +4,11 @@ package com.dilatush.dns.message;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
+import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
-
-import static com.dilatush.util.General.isNull;
 
 /**
  * Instances of this class represent a DNS question, with a domain name (the subject of the question), the resource record type desired, and the
@@ -42,8 +41,7 @@ public class DNSQuestion {
      */
     public DNSQuestion( final DNSDomainName _qname, final DNSRRType _qtype, final DNSRRClass _qclass ) {
 
-        if( isNull( _qname, _qtype, _qclass ) )
-            throw new IllegalArgumentException( "Missing required argument(s)" );
+        Checks.required( _qname, _qtype, _qclass );
 
         qname  = _qname;
         qtype  = _qtype;

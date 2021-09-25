@@ -4,8 +4,6 @@ package com.dilatush.dns;
 // TODO: Get rid of protected everywhere
 // TODO: Change terminology from "recursive" and "iterative" to "forwarding" and "recursive"
 // TODO: Comments and Javadocs...
-// TODO: make all errors report a code...
-// TODO: replace all isNull and x == null with Checks.required()
 
 
 import com.dilatush.dns.agent.*;
@@ -29,7 +27,6 @@ import java.util.function.Consumer;
 import static com.dilatush.dns.IPVersion.*;
 import static com.dilatush.dns.agent.DNSQuery.QueryResult;
 import static com.dilatush.dns.message.DNSRRType.*;
-import static com.dilatush.util.General.isNull;
 
 
 /**
@@ -384,8 +381,7 @@ public class DNSResolver {
          */
         public void addDNSServer( final InetSocketAddress _serverAddress, final long _timeoutMillis, final int _priority, final String _name ) {
 
-            if( isNull( _serverAddress, _name ) )
-                throw new IllegalArgumentException( "Missing required argument(s)" );
+            Checks.required( _serverAddress, _name );
 
             agentParams.add( new AgentParams( _timeoutMillis, _priority, _name, _serverAddress ) );
         }

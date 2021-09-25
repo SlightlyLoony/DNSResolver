@@ -1,18 +1,17 @@
 package com.dilatush.dns.agent;
 
-import com.dilatush.util.Bytes;
-import com.dilatush.util.ExecutorService;
-import com.dilatush.util.Outcome;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.message.DNSMessage;
+import com.dilatush.util.Bytes;
+import com.dilatush.util.Checks;
+import com.dilatush.util.ExecutorService;
+import com.dilatush.util.Outcome;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import static com.dilatush.util.General.isNull;
 
 
 /**
@@ -55,8 +54,7 @@ public class DNSServerAgent {
     public DNSServerAgent( final DNSResolver _resolver, final DNSQuery _query, final DNSNIO _nio, final ExecutorService _executor,
                            final long _timeoutMillis, final int _priority, final String _name, final InetSocketAddress _serverAddress ) {
 
-        if( isNull( _resolver, _query, _nio, _executor, _name, _serverAddress ) )
-            throw new IllegalArgumentException( "Required argument(s) are missing" );
+        Checks.required( _resolver, _query, _nio, _executor, _name, _serverAddress );
 
         if( (_timeoutMillis < MIN_TIMEOUT_MILLIS) || (_timeoutMillis > MAX_TIMEOUT_MILLIS) )
             throw new IllegalArgumentException( "Timeout outside permissible range of [" + MIN_TIMEOUT_MILLIS + ".." + MAX_TIMEOUT_MILLIS + "] milliseconds: " + _timeoutMillis );

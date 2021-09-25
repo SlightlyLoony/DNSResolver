@@ -2,9 +2,10 @@ package com.dilatush.dns.agent;
 
 import com.dilatush.dns.DNSResolverError;
 import com.dilatush.dns.DNSResolverException;
+import com.dilatush.dns.message.DNSMessage;
+import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.Outcome;
-import com.dilatush.dns.message.DNSMessage;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -15,7 +16,6 @@ import java.nio.channels.SocketChannel;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static com.dilatush.util.General.isNull;
 import static java.nio.channels.SelectionKey.*;
 
 public class DNSTCPChannel extends DNSChannel {
@@ -36,8 +36,7 @@ public class DNSTCPChannel extends DNSChannel {
     @Override
     protected Outcome<?> send( final DNSMessage _msg ) {
 
-        if( isNull( _msg) )
-            throw new IllegalArgumentException( "Required message argument is missing" );
+        Checks.required( _msg );
 
         Outcome<ByteBuffer> emo = _msg.encode();
         if( emo.notOk() )

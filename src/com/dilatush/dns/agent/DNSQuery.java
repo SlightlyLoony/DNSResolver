@@ -10,6 +10,7 @@ import com.dilatush.dns.message.DNSResponseCode;
 import com.dilatush.dns.rr.A;
 import com.dilatush.dns.rr.AAAA;
 import com.dilatush.dns.rr.DNSResourceRecord;
+import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
@@ -24,7 +25,6 @@ import java.util.logging.Logger;
 
 import static com.dilatush.dns.agent.DNSTransport.TCP;
 import static com.dilatush.dns.agent.DNSTransport.UDP;
-import static com.dilatush.util.General.isNull;
 
 /**
  * Abstract base class for query implementations.
@@ -79,9 +79,7 @@ public abstract class DNSQuery {
                      final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
                      final List<AgentParams> _agents, final Consumer<Outcome<QueryResult>> _handler ) {
 
-        // sanity checks...
-        if( isNull( _resolver, _cache, _nio, _executor, _activeQueries, _question, _handler ) )
-            throw new IllegalArgumentException( "Required argument(s) are missing" );
+        Checks.required( _resolver, _cache, _nio, _executor, _activeQueries, _question, _handler );
 
         resolver        = _resolver;
         cache           = _cache;
