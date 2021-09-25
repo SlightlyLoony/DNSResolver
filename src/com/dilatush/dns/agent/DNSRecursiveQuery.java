@@ -1,14 +1,14 @@
 package com.dilatush.dns.agent;
 
-import com.dilatush.util.Checks;
-import com.dilatush.util.ExecutorService;
-import com.dilatush.util.General;
-import com.dilatush.util.Outcome;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolver.AgentParams;
 import com.dilatush.dns.cache.DNSCache;
 import com.dilatush.dns.message.*;
 import com.dilatush.dns.rr.*;
+import com.dilatush.util.Checks;
+import com.dilatush.util.ExecutorService;
+import com.dilatush.util.General;
+import com.dilatush.util.Outcome;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;

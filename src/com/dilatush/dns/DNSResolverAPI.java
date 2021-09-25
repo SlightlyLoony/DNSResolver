@@ -224,6 +224,31 @@ public class DNSResolverAPI {
 
 
     /**
+     * Synchronously resolve the Internet Protocol version 6 (IPv6) addresses for the given fully-qualified domain name (FQDN), returning an
+     * {@link Outcome Outcome&lt;List&lt;Inet6Address&gt;&gt;} with the result.  The outcome will be "not ok" if there was a problem querying other DNS servers, or if the FQDN
+     * does not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv6 addresses.
+     *
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv6 addresses.
+     * @return The {@link Outcome Outcome&lt;List&lt;Inet6Address&gt;&gt;} with the result of this query.
+     */
+    public Outcome<List<Inet6Address>> resolveIPv6Addresses( final String _fqdn ) {
+
+        Checks.required( _fqdn );
+
+        // set up the handler that will process the raw results of the query...
+        SyncHandler<List<Inet6Address>> handler = new SyncHandler<>( (qr) -> extractIPv6Addresses( qr.response().answers, _fqdn ) );
+
+        // get the question we're going to ask the DNS...
+        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.AAAA );
+        if( qo.notOk() ) return handler.syncOutcome.notOk( qo.msg(), qo.cause() );
+
+        // fire off the query...
+        query( qo.info(), handler::handler );
+        return handler.waitForCompletion();
+    }
+
+
+    /**
      * Synchronously resolve the strings in TXT records for the given fully-qualified domain name (FQDN), returning an
      * {@link Outcome Outcome&lt;List&lt;String&gt;&gt;} with the result.  The outcome will be "not ok" if there was a problem querying other DNS servers, or if the FQDN
      * does not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more strings.
@@ -358,6 +383,8 @@ public class DNSResolverAPI {
 
         private void handler( final Outcome<QueryResult> _qr ) {
             qr = _qr;
+            if( qr.ok() )
+                LOGGER.finest( "-----\n" + qr.info().log().toString() );
             waiter.release();
         }
 

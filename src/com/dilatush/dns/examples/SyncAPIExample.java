@@ -6,6 +6,7 @@ import com.dilatush.dns.DNSServerException;
 import com.dilatush.util.Outcome;
 
 import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.List;
@@ -18,6 +19,8 @@ import static com.dilatush.util.General.breakpoint;
 @SuppressWarnings( "unused" )
 public class SyncAPIExample {
 
+    public static DNSResolverAPI api;
+
     public static void main( final String[] _args ) {
 
         System.getProperties().setProperty( "java.util.logging.config.file", "example-logging.properties" );
@@ -25,7 +28,7 @@ public class SyncAPIExample {
         System.out.println( "Using forwarding resolver..." );
 
         // get an API that uses a forwarding resolver...
-        DNSResolverAPI api = getForwardingResolverAPI();
+        api = getForwardingResolverAPI();
 
         // resolve some stuff...
         resolve( api );
@@ -38,6 +41,9 @@ public class SyncAPIExample {
         // resolve some stuff...
         resolve( api );
 
+        // resolve some stuff again, to test resolution from cache...
+        resolve( api );
+
         breakpoint();
     }
 
@@ -46,6 +52,9 @@ public class SyncAPIExample {
 
         // get the IPv4 addresses for a few FQDNs and print the results...
         resolveIPv4( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
+
+        // get the IPv6 addresses for a few FQDNs and print the results...
+        resolveIPv6( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
 
         // get the name servers for some FQDNs and print the results...
         resolveNameServers( _api, "yahoo.com", "www.cnn.com", "qqq.cnn.com" );
@@ -97,10 +106,32 @@ public class SyncAPIExample {
                 else
                     System.out.println( "      ok: " + fqdn + " has no IPv4 addresses" );
             else
-                if( ip4o.cause() instanceof DNSServerException )
-                    System.out.println( "  not ok: " + fqdn + ": server reports " + ((DNSServerException) ip4o.cause()).responseCode );
+            if( ip4o.cause() instanceof DNSServerException )
+                System.out.println( "  not ok: " + fqdn + ": server reports " + ((DNSServerException) ip4o.cause()).responseCode );
+            else
+                System.out.println( "  not ok: " + fqdn + ": " + ip4o.msg() );
+        } );
+    }
+
+
+    // use the given API to resolve and print out the IPv6 addresses of the given FQDNs...
+    private static void resolveIPv6( final DNSResolverAPI _api, final String... _fqdn ) {
+
+        System.out.println( "Resolved IPv6 addresses:" );
+
+        Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
+
+            Outcome<List<Inet6Address>> ip6o = _api.resolveIPv6Addresses( fqdn );
+            if( ip6o.ok() )
+                if( ip6o.info().size() > 0 )
+                    ip6o.info().forEach( (ip) -> System.out.println( "      ok: " + ip.toString() ) );
                 else
-                    System.out.println( "  not ok: " + fqdn + ": " + ip4o.msg() );
+                    System.out.println( "      ok: " + fqdn + " has no IPv6 addresses" );
+            else
+            if( ip6o.cause() instanceof DNSServerException )
+                System.out.println( "  not ok: " + fqdn + ": server reports " + ((DNSServerException) ip6o.cause()).responseCode );
+            else
+                System.out.println( "  not ok: " + fqdn + ": " + ip6o.msg() );
         } );
     }
 

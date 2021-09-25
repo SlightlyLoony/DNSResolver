@@ -2,8 +2,6 @@ package com.dilatush.dns;
 
 // TODO: Handle responses with no answers (see RFC 2308)
 // TODO: Get rid of protected everywhere
-// TODO: it would be nice to hae a way to return an enum with the error type, if there was an error -- ah, could be done with an exception...
-// TODO:   this would make it worthwhile to refactor everything that returns "not ok"...
 // TODO: Change terminology from "recursive" and "iterative" to "forwarding" and "recursive"
 // TODO: Comments and Javadocs...
 
@@ -184,27 +182,28 @@ public class DNSResolver {
             if( (rr.klass == _question.qclass) && (rr.type == _question.qtype) )
                 answers.add( rr );
 
-            // if it's a CNAME, we need to resolve the chain (which could be arbitrarily long)...
-            else if( rr.type == CNAME ) {
+            // if it's a CNAME, and it's the only record we got, then we need to resolve the chain (which could be arbitrarily long)...
+            // (if there's a CNAME, the DNS RFCs call for it to be the ONLY resource record with that FQDN)...
+            else if( (rr.type == CNAME) && (cached.size() == 1) ) {
 
-                // resolve the CNAME chain, recording the elements into the list cnameChain...
-                List<DNSResourceRecord> cnameChain = new ArrayList<>();
-                cnameChain.add( rr );
-                while( (cnameChain.size() == 1) && (cnameChain.get(0).type == CNAME) ) {
-                    answers.add( cnameChain.get( 0 ) );
-                    cnameChain = cache.get( ((com.dilatush.dns.rr.CNAME)cnameChain.get( 0 )).cname );
+                // resolve the CNAME chain, recording the elements into the list answerChain...
+                List<DNSResourceRecord> answerChain = new ArrayList<>();
+                List<DNSResourceRecord> cached2 = new ArrayList<>( cached );
+                while( (cached2.size() == 1) && (cached2.get(0).type == CNAME) ) {
+                    answerChain.add( cached2.get( 0 ) );
+                    cached2 = cache.get( ((com.dilatush.dns.rr.CNAME)cached2.get( 0 )).cname );
                 }
 
-                // see if we got the record type we wanted after resolving the CNAME chain...
+                // at this point, answerChain contains 1 or more CNAME records, and cached2 contains a different kind of records, or no record...
+                // so now we see if cached2 has any of the kinds of records we actually want, and if so we add them to answerChain...
                 AtomicBoolean gotOne = new AtomicBoolean( false );
-                cnameChain.forEach( (cnameChainElement) -> {
-                    if( (cnameChainElement.klass == _question.qclass) && (cnameChainElement.type == _question.qtype) )
-                        gotOne.set( true );
-                } );
+                cached2.stream()
+                        .filter(  (arr) -> (arr.klass == _question.qclass) && (arr.type == _question.qtype) )
+                        .forEach( (arr) -> { gotOne.set( true ); answerChain.add( arr ); } );
 
                 // if we got at least one, then dump the CNAME resolution chain into our answers...
                 if( gotOne.get() )
-                    answers.addAll( cnameChain );
+                    answers.addAll( answerChain );
             }
         } );
 
