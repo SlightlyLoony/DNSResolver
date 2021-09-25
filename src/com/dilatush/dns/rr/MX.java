@@ -4,17 +4,17 @@ package com.dilatush.dns.rr;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
-import com.dilatush.util.Outcome;
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.util.Checks;
+import com.dilatush.util.Outcome;
 
 import java.nio.BufferOverflowException;
-import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.util.Map;
-
-import static com.dilatush.util.General.isNull;
 
 /**
  * Instances of this class represent a DNS Resource Record for a mail exchanger associated with this resource record's domain name.
@@ -69,8 +69,7 @@ public class MX extends DNSResourceRecord {
             final DNSDomainName _name, final DNSRRClass _klass, final int _ttl,
             final int _preference, final DNSDomainName _mailExchanger ) {
 
-        if( isNull( _name, _klass, _mailExchanger ) )
-            return outcome.notOk( "Missing argument (name, class, or mail exchanger)" );
+        Checks.required( _name, _klass, _mailExchanger );
 
         return outcome.ok( new MX( _name, _klass, _ttl, 4, _preference, _mailExchanger ) );
     }
@@ -106,13 +105,14 @@ public class MX extends DNSResourceRecord {
 
         // decode the preference...
         if( _msgBuffer.remaining() < 2 )
-            return outcome.notOk( "Buffer underflow", new BufferUnderflowException() );
+            return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
+
         int preference = _msgBuffer.getShort() & 0xFFFF;
 
         // decode the domain name...
         Outcome<DNSDomainName> dnOutcome = DNSDomainName.decode( _msgBuffer );
         if( dnOutcome.notOk() )
-            return outcome.notOk(dnOutcome.msg() );
+            return outcome.notOk( dnOutcome.msg(), dnOutcome.cause() );
 
         // create and return our instance...
         return outcome.ok( new MX(_init.name(), _init.klass(), _init.ttl(), _init.dataLength(), preference, dnOutcome.info() ) );
@@ -136,7 +136,8 @@ public class MX extends DNSResourceRecord {
 
         // encode the preference...
         if( _msgBuffer.remaining() < 2 )
-            return outcome.notOk( "Buffer overflow", new BufferOverflowException() );
+            return outcome.notOk( "Encoder buffer overflow", new DNSResolverException( "Buffer overflow", DNSResolverError.ENCODER_BUFFER_OVERFLOW ) );
+
         _msgBuffer.putShort( (short) preference );
 
         // encode the mail exchanger name and skedaddle...

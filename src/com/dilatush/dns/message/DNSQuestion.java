@@ -108,17 +108,17 @@ public class DNSQuestion {
         // decode the domain name...
         Outcome<DNSDomainName> domainNameOutcome = DNSDomainName.decode( _buffer );
         if( !domainNameOutcome.ok() )
-            return outcome.notOk( "Could not decode qname: " + domainNameOutcome.msg() );
+            return outcome.notOk( "Could not decode qname: " + domainNameOutcome.msg(), domainNameOutcome.cause() );
 
         // decode the resource record type...
         Outcome<DNSRRType> rrTypeOutcome = DNSRRType.decode( _buffer );
         if( !rrTypeOutcome.ok() )
-            return outcome.notOk( "Could not decode qtype: " + rrTypeOutcome.msg() );
+            return outcome.notOk( "Could not decode qtype: " + rrTypeOutcome.msg(), rrTypeOutcome.cause() );
 
         // decode the resource record class...
         Outcome<DNSRRClass> rrClassOutcome = DNSRRClass.decode( _buffer );
         if( !rrClassOutcome.ok() )
-            return outcome.notOk( "Could not decode qclass: " + rrClassOutcome.msg() );
+            return outcome.notOk( "Could not decode qclass: " + rrClassOutcome.msg(), rrClassOutcome.cause() );
 
         // if we get here we decoded everything, so leave with our shiny newly decoded instance...
         return outcome.ok( new DNSQuestion( domainNameOutcome.info(), rrTypeOutcome.info(), rrClassOutcome.info() ) );

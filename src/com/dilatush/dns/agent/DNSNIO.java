@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static com.dilatush.dns.DNSResolverError.NETWORK;
 import static java.lang.System.currentTimeMillis;
 
 public class DNSNIO {
@@ -41,7 +42,7 @@ public class DNSNIO {
      *
      * @throws DNSException if the selector can't be opened for some reason.
      */
-    public DNSNIO() throws DNSException {
+    public DNSNIO() throws DNSResolverException {
 
         // get our timeouts manager...
         timeouts = new Timeouts();
@@ -51,7 +52,7 @@ public class DNSNIO {
             selector = Selector.open();
         }
         catch( IOException _e ) {
-            throw new DNSResolverException( "Problem opening selector", _e );
+            throw new DNSResolverException( "Problem opening selector", _e, NETWORK );
         }
 
         // use the alternate executor if it was supplied; otherwise, use a default executor...

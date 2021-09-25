@@ -82,7 +82,7 @@ public class DNSServerAgent {
             timeout = new DNSQueryTimeout( timeoutMillis, this::handleTimeout );
             nio.addTimeout( timeout );
         }
-        return queryOutcome.ok();
+        return result;
     }
 
 

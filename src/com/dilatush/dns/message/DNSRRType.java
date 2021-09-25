@@ -1,5 +1,8 @@
 package com.dilatush.dns.message;
 
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
+import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
 
 import java.nio.BufferOverflowException;
@@ -96,11 +99,10 @@ public enum DNSRRType {
      */
     public Outcome<?> encode( final ByteBuffer _msgBuffer ) {
 
-        if( isNull( _msgBuffer ) )
-            return encodeOutcome.notOk( "Missing message buffer" );
+        Checks.required( _msgBuffer );
 
         if( _msgBuffer.remaining() < 2 )
-            return encodeOutcome.notOk( new BufferOverflowException() );
+            return outcome.notOk( "Encoder buffer overflow", new DNSResolverException( "Buffer overflow", DNSResolverError.ENCODER_BUFFER_OVERFLOW ) );
 
         _msgBuffer.putShort( (short) code );
         return encodeOutcome.ok();
@@ -139,10 +141,10 @@ public enum DNSRRType {
      */
     public static Outcome<DNSRRType> decode( final ByteBuffer _buffer ) {
 
-        if( isNull( _buffer ) )
-            return outcome.notOk( "Buffer is missing" );
+        Checks.required( _buffer );
+
         if( _buffer.remaining() < 2 )
-            return outcome.notOk( "Buffer has insufficient bytes remaining");
+            return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
         // extract the 16 bit code (value)...
         int code = 0xffff & _buffer.getShort();

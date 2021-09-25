@@ -1,8 +1,11 @@
 package com.dilatush.dns.agent;
 
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
+import com.dilatush.dns.message.DNSMessage;
+import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.Outcome;
-import com.dilatush.dns.message.DNSMessage;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -13,7 +16,6 @@ import java.nio.channels.Selector;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static com.dilatush.util.General.isNull;
 import static java.nio.channels.SelectionKey.OP_READ;
 import static java.nio.channels.SelectionKey.OP_WRITE;
 
@@ -32,8 +34,7 @@ public class DNSUDPChannel extends DNSChannel {
     @Override
     protected synchronized Outcome<?> send( final DNSMessage _msg ) {
 
-        if( isNull( _msg) )
-            throw new IllegalArgumentException( "Required message argument is missing" );
+        Checks.required( _msg );
 
         Outcome<ByteBuffer> emo = _msg.encode();
         if( emo.notOk() )
@@ -41,7 +42,10 @@ public class DNSUDPChannel extends DNSChannel {
 
         boolean wasAdded = sendData.offerFirst( emo.info() );
         if( !wasAdded )
-            return outcome.notOk( "Send data queue full" );
+            return outcome.notOk(
+                    "UDP send data queue full",
+                    new DNSResolverException( "UDP send data queue full", DNSResolverError.UDP_SEND_QUEUE_FULL )
+            );
 
         // if we just added the first data, open the UDP socket, bind, connect, and set write interest on...
         if( sendData.size() == 1 ) {
@@ -55,7 +59,10 @@ public class DNSUDPChannel extends DNSChannel {
                 return outcome.ok();
             }
             catch( IOException _e ) {
-                return outcome.notOk( "Could not send message via UDP", _e );
+                return outcome.notOk(
+                        "Could not send message via UDP: " + _e.getMessage(),
+                        new DNSResolverException( "Could not send message via UDP", _e, DNSResolverError.NETWORK )
+                );
             }
         }
 

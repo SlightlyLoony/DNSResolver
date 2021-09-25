@@ -1,13 +1,13 @@
 package com.dilatush.dns.message;
 
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
 import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
 
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.util.*;
-
-import static com.dilatush.util.General.isNull;
 
 /**
  * Instances of this class represent a DNS domain name, which is a sequence of DNS labels.  Instances of this class are immutable and threadsafe.
@@ -116,9 +116,7 @@ public class DNSDomainName {
      */
     public Outcome<?> encode( final ByteBuffer _msgBuffer, final Map<String,Integer> _nameOffsets ) {
 
-        // make sure we actually have arguments...
-        if( isNull( _msgBuffer, _nameOffsets ) )
-            return outcome.notOk( "Missing buffer or offsets" );
+        Checks.required( _msgBuffer, _nameOffsets );
 
         // iterate over the complete domain name, and then its sub-domains...
         List<DNSLabel> ls = new ArrayList<>( labels );
@@ -133,7 +131,10 @@ public class DNSDomainName {
 
                 // check that we have the space in our buffer...
                 if( _msgBuffer.remaining() < 2 )
-                    return outcome.notOk( new BufferOverflowException() );
+                    return outcome.notOk(
+                            "Encoder buffer overflow",
+                            new DNSResolverException( "Encoder buffer overflow", DNSResolverError.ENCODER_BUFFER_OVERFLOW )
+                    );
 
                 // create and encode the offset pointer, and we're done...
                 // note that no terminating null is needed in this case...
@@ -146,7 +147,10 @@ public class DNSDomainName {
 
             // check that we have the space in our buffer...
             if( ls.get( 0 ).length > _msgBuffer.remaining() )
-                return outcome.notOk(  new BufferOverflowException() );
+                return outcome.notOk(
+                        "Encoder buffer overflow",
+                        new DNSResolverException( "Encoder buffer overflow", DNSResolverError.ENCODER_BUFFER_OVERFLOW )
+                );
 
             // if the position is within the offset pointer range, map the offset to this domain or sub-domain, in case we ever see it again...
             if( (_msgBuffer.position() & 0xFFFFC000) == 0 )
@@ -163,7 +167,10 @@ public class DNSDomainName {
 
         // check that we have the space in our buffer...
         if( _msgBuffer.remaining() < 1 )
-            return outcome.notOk( new BufferOverflowException() );
+            return outcome.notOk(
+                    "Encoder buffer overflow",
+                    new DNSResolverException( "Encoder buffer overflow", DNSResolverError.ENCODER_BUFFER_OVERFLOW )
+            );
 
         // stuff the terminating null...
         _msgBuffer.put( (byte) 0 );
@@ -192,7 +199,10 @@ public class DNSDomainName {
 
         // aggregate length of encoded labels, not including the null terminator, must be <= 255...
         if( sum > 255 )
-            return outcome.notOk( "Domain name byte length may not exceed 255 bytes" );
+            return outcome.notOk(
+                    "Labels would make domain name longer than 255 bytes",
+                    new DNSResolverException( "Domain name over 255 bytes", DNSResolverError.INVALID_DOMAIN_NAME )
+            );
 
         // we're good!
         return outcome.ok( new DNSDomainName( _labels ) );
@@ -237,7 +247,7 @@ public class DNSDomainName {
         for( String labelText : labelTexts ) {
             Outcome<DNSLabel> result = DNSLabel.fromString( labelText );
             if( !result.ok() )
-                return outcome.notOk( "Couldn't create label from: " + labelText + "(" + result.msg() + ")" );
+                return outcome.notOk( "Couldn't create label from: " + labelText + "(" + result.msg() + ")", result.cause() );
             labels.add( result.info() );
         }
 
@@ -299,10 +309,13 @@ public class DNSDomainName {
      */
     public static Outcome<DNSDomainName> decode( final ByteBuffer _buffer ) {
 
-        if( isNull( _buffer ) )
-            return outcome.notOk( "Buffer is missing" );
+        Checks.required( _buffer );
+
         if( !_buffer.hasRemaining() )
-            return outcome.notOk( "Buffer has no bytes remaining");
+            return outcome.notOk(
+                    "Buffer has no bytes remaining",
+                    new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW )
+            );
 
         // in the case of a compressed form, we need to remember what the buffer position should be when we've finished...
         int nextPos = -1;  // impossible value; will be set the first time we run into a compression pointer...
@@ -330,7 +343,7 @@ public class DNSDomainName {
             // note that we can get here after following a compression pointer...
             Outcome<DNSLabel> labelOutcome = DNSLabel.decode( _buffer );
             if( !labelOutcome.ok() )
-                return outcome.notOk( "Could not decode label: " + labelOutcome.msg() );
+                return outcome.notOk( "Could not decode label: " + labelOutcome.msg(), labelOutcome.cause() );
             labels.add( labelOutcome.info() );
         }
 

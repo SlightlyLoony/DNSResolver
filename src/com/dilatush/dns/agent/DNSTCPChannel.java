@@ -1,5 +1,7 @@
 package com.dilatush.dns.agent;
 
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.Outcome;
 import com.dilatush.dns.message.DNSMessage;
@@ -52,7 +54,7 @@ public class DNSTCPChannel extends DNSChannel {
 
         boolean wasAdded = sendData.offerFirst( data );
         if( !wasAdded )
-            return outcome.notOk( "Send data queue full" );
+            return outcome.notOk( "TCP send data queue full", new DNSResolverException( "TCP send data queue full", DNSResolverError.TCP_SEND_QUEUE_FULL ) );
 
         if( tcpChannel == null ) {
             try {
@@ -61,7 +63,10 @@ public class DNSTCPChannel extends DNSChannel {
                 tcpChannel.bind( null );
             }
             catch( IOException _e ) {
-                return outcome.notOk( "Could not open TCP channel: " + _e.getMessage(), _e );
+                return outcome.notOk(
+                        "Could not open TCP channel: " + _e.getMessage(),
+                        new DNSResolverException( "Could not open TCP channel", _e, DNSResolverError.NETWORK )
+                );
             }
         }
 
@@ -73,7 +78,10 @@ public class DNSTCPChannel extends DNSChannel {
                 return outcome.ok();
             }
             catch( IOException _e ) {
-                return outcome.notOk( "Could not send message via TCP: " + _e.getMessage(), _e );
+                return outcome.notOk(
+                        "Could not send message via TCP: " + _e.getMessage(),
+                        new DNSResolverException( "Could not send message via TCP", _e, DNSResolverError.NETWORK )
+                );
             }
         }
 

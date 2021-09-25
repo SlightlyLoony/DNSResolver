@@ -19,6 +19,7 @@ import static com.dilatush.dns.DNSUtil.*;
 import static com.dilatush.dns.agent.DNSQuery.QueryResult;
 import static com.dilatush.dns.agent.DNSTransport.UDP;
 
+// TODO: should the synchronous methods leverage the asynchronous methods?
 /**
  * <p>Instances of this class wrap an instance of {@link DNSResolver} to provide a simpler and more convenient API than is provided by the {@link DNSResolver} itself.</p>
  * <p>If the wrapped {@link DNSResolver} has been provisioned with DNS servers that it can forward to, then this API will forward all its queries to those DNS servers.
@@ -122,7 +123,7 @@ public class DNSResolverAPI {
      * <p>Returns a "not ok" outcome if there was a problem initiating network operations to transmit the query to a DNS server.</p>
      * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
-     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv4 addresses.</p>
+     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv6 addresses.</p>
      *
      * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv6 addresses.
@@ -142,6 +143,42 @@ public class DNSResolverAPI {
         // fire off the query...
         return query( qo.info(), handler::handler );
     }
+//
+//
+//    /**
+//     * <p>Asynchronously resolve the Internet Protocol addresses (both version 4 and 6) for the given fully-qualified domain name (FQDN), calling the given handler with the
+//     * result.</p>
+//     * <p>Returns a "not ok" outcome if there was a problem initiating network operations to transmit the query to a DNS server.</p>
+//     * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
+//     * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
+//     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IP addresses.</p>
+//     *
+//     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
+//     * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IP addresses.
+//     * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
+//     */
+//    public Outcome<?> resolveIPAddresses( final Consumer<Outcome<List<InetAddress>>> _handler, final String _fqdn  ) {
+//
+//        Checks.required( _fqdn, _handler );
+//
+//        // We must make two separate queries to get the answers, as DNS has no ability to query for both A and AAAA at once.  We're doing this asynchronously, so we make
+//        // both queries at once, then wait until we get both answers.  We only return with an error if BOTH queries had errors...
+//
+//        // launch our two queries...
+//        Outcome<?> v4qo = resolveIPv6Addresses( null, _fqdn );
+//        Outcome<?> v6qo = resolveIPv6Addresses( null, _fqdn );
+//
+//
+//        // set up the handler that will process the raw results of the query...
+//        AsyncHandler<List<InetAddress>> handler = new AsyncHandler<>( _handler, ( qr) -> extractIPv6Addresses( qr.response().answers, _fqdn ) );
+//
+//        // get the question we're going to ask the DNS...
+//        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.AAAA );
+//        if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
+//
+//        // fire off the query...
+//        return query( qo.info(), handler::handler );
+//    }
 
 
     /**

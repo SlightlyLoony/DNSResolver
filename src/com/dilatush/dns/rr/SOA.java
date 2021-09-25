@@ -4,16 +4,17 @@ package com.dilatush.dns.rr;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
-import com.dilatush.util.Outcome;
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.util.Checks;
+import com.dilatush.util.Outcome;
 
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.util.Map;
-
-import static com.dilatush.util.General.isNull;
 
 /**
  * Instances of this class represent a DNS Resource Record for the Start of Authority record in the zone of the name server that supplied the answers
@@ -102,8 +103,7 @@ public class SOA extends DNSResourceRecord {
             final DNSDomainName _mname, final DNSDomainName _rname,
             final long _serial, final long _refresh, final long _retry, final long _expire, final long _minimum ) {
 
-        if( isNull( _name, _klass, _mname, _rname ) )
-            return outcome.notOk( "Missing argument (name, class, mname, or rname)" );
+        Checks.required( _name, _klass, _mname, _rname );
 
         return outcome.ok( new SOA( _name, _klass, _ttl, 4, _mname, _rname, _serial, _refresh, _retry, _expire, _minimum ) );
     }
@@ -146,16 +146,16 @@ public class SOA extends DNSResourceRecord {
         // decode the domain name of the name server...
         Outcome<DNSDomainName> nso = DNSDomainName.decode( _msgBuffer );
         if( nso.notOk() )
-            return outcome.notOk( nso.msg() );
+            return outcome.notOk( nso.msg(), nso.cause() );
 
         // decode the domain name of the responsible person's mailbox...
         Outcome<DNSDomainName> rpo = DNSDomainName.decode( _msgBuffer );
         if( rpo.notOk() )
-            return outcome.notOk( rpo.msg() );
+            return outcome.notOk( rpo.msg(), rpo.cause() );
 
         // do we have enough bytes remaining to decode five 32-bit integers (20 bytes)?
         if( _msgBuffer.remaining() < 20 )
-            return outcome.notOk( "Insufficient bytes in message buffer" );
+            return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
         // we did have room, so decode them all...
         long serial  = 0xFFFFFFFFL & _msgBuffer.getInt();
@@ -195,7 +195,7 @@ public class SOA extends DNSResourceRecord {
 
         // do we have enough room remaining to encode five 32-bit integers (20 bytes)?
         if( _msgBuffer.remaining() < 20 )
-            return outcome.notOk( new BufferOverflowException() );
+            return outcome.notOk( "Encoder buffer overflow", new DNSResolverException( "Buffer overflow", DNSResolverError.ENCODER_BUFFER_OVERFLOW ) );
 
         // encode our five numbers...
         _msgBuffer.putInt( (int) serial  );

@@ -4,13 +4,14 @@ package com.dilatush.dns.rr;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
-import com.dilatush.util.Outcome;
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.util.Outcome;
 
 import java.nio.BufferOverflowException;
-import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.util.Map;
 
@@ -55,7 +56,7 @@ public class UNIMPLEMENTED extends DNSResourceRecord {
      */
     public static Outcome<UNIMPLEMENTED> create( final DNSDomainName _name, final DNSRRClass _klass, final int _ttl, final int _rdataLength ) {
 
-        return outcome.notOk( "Creation and encoding not implemented" );
+        return outcome.notOk( "Creation and encoding not implemented", new DNSResolverException( "Can't create UNIMPLEMENTED", DNSResolverError.UNIMPLEMENTED_UNENCODABLE ) );
     }
 
 
@@ -87,7 +88,7 @@ public class UNIMPLEMENTED extends DNSResourceRecord {
     protected static Outcome<UNIMPLEMENTED> decode( final ByteBuffer _msgBuffer, final Init _init, final int _typeCodePos ) {
 
         if( _msgBuffer.remaining() < _init.dataLength() )
-            return outcome.notOk( new BufferUnderflowException() );
+            return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
         int typeCode = _msgBuffer.getShort( _typeCodePos ) & 0xFFFF;
 
@@ -111,7 +112,7 @@ public class UNIMPLEMENTED extends DNSResourceRecord {
     @Override
     protected Outcome<?> encodeChild( ByteBuffer _msgBuffer, Map<String, Integer> _nameOffsets ) {
 
-        return encodeOutcome.notOk( "Unimplemented resource record type; can't encode" );
+        return encodeOutcome.notOk( "Unimplemented resource record type; can't encode", new DNSResolverException( "Unencodable", DNSResolverError.UNIMPLEMENTED_UNENCODABLE ) );
     }
 
 

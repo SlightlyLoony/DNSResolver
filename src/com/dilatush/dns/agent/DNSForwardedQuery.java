@@ -72,10 +72,9 @@ public class DNSForwardedQuery extends DNSQuery {
 
         Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
 
-        if( sendOutcome.notOk() )
-            return queryOutcome.notOk( sendOutcome.msg(), sendOutcome.cause() );
-
-        return queryOutcome.ok();
+        return sendOutcome.ok()
+                ? queryOutcome.ok()
+                : queryOutcome.notOk( sendOutcome.msg(), sendOutcome.cause() );
     }
 
 

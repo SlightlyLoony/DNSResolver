@@ -1,5 +1,7 @@
 package com.dilatush.dns.cache;
 
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
 import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
 import com.dilatush.util.Streams;
@@ -31,6 +33,8 @@ import static com.dilatush.util.General.getLogger;
 import static com.dilatush.util.Strings.isEmpty;
 import static java.util.regex.Pattern.*;
 
+// TODO: revise to make TTLs relative to last read time, stop decoding the last updated date.
+// TODO: review all the .notOk( calls...
 /**
  * Instances of this class manage DNS root name server "hints".  These are publicly downloadable via HTTP.  Methods are provided to read and write a local file (to provide
  * persistence, mainly for startup), to read the original file via HTTP, and to cache the results locally.
@@ -97,7 +101,10 @@ public class DNSRootHints {
         }
         catch( IOException _e ) {
             LOGGER.log( Level.WARNING, "Problem reading URL: " + _e.getMessage(), _e );
-            return stringOutcome.notOk( "Problem reading URL: " + _e.getMessage(), _e );
+            return stringOutcome.notOk(
+                    "Problem reading URL: " + _e.getMessage(),
+                    new DNSResolverException( "Problem reading root hints URL", _e, DNSResolverError.ROOT_HINTS_PROBLEMS )
+            );
         }
 
     }
@@ -115,7 +122,10 @@ public class DNSRootHints {
 
             // if we don't have a usable file, return an error...
             if( !Files.exists( rhPath ) || !Files.isReadable( rhPath ) || (Files.size( rhPath ) < 500 ) )
-                return stringOutcome.notOk( "Root hints file does not exist, is not readable, or is too short to be valid" );
+                return stringOutcome.notOk(
+                        "Root hints file does not exist, is not readable, or is too short to be valid",
+                        new DNSResolverException( "Can't read root hints file", DNSResolverError.ROOT_HINTS_PROBLEMS )
+                );
 
             // ok, it's safe to actually read it...
             rootHintsString = Files.readString( rhPath, StandardCharsets.US_ASCII );
@@ -124,7 +134,10 @@ public class DNSRootHints {
         }
         catch( IOException _e ) {
             LOGGER.log( Level.WARNING, "Problem reading root hints file: " + _e.getMessage(), _e );
-            return stringOutcome.notOk( "Problem reading root hints file: " + _e.getMessage(), _e );
+            return stringOutcome.notOk(
+                    "Problem reading root hints file: " + _e.getMessage(),
+                    new DNSResolverException( "Problem reading root hints file", _e, DNSResolverError.ROOT_HINTS_PROBLEMS )
+            );
         }
     }
 
@@ -143,7 +156,10 @@ public class DNSRootHints {
         }
         catch( IOException _e ) {
             LOGGER.log( Level.WARNING, "Problem writing root hints file: " + _e.getMessage(), _e );
-            return outcome.notOk( "Problem writing root hints file: " + _e.getMessage(), _e );
+            return outcome.notOk(
+                    "Problem writing root hints file: " + _e.getMessage(),
+                    new DNSResolverException( "Problem writing root hints file", _e, DNSResolverError.ROOT_HINTS_PROBLEMS )
+            );
         }
     }
 
@@ -156,7 +172,9 @@ public class DNSRootHints {
     public Outcome<List<DNSResourceRecord>> decode() {
 
         if( isEmpty( rootHintsString ) )
-            return rrlOutcome.notOk( "No root hints have been read" );
+            return rrlOutcome.notOk(
+                    "No root hints have been read", new DNSResolverException( "No root hints have been read", DNSResolverError.ROOT_HINTS_PROBLEMS )
+            );
 
         // first we get the date this file was last updated; we use that to compute the time-to-live as of the moment this method was run...
         Matcher mat = DATE_PATTERN.matcher( rootHintsString );

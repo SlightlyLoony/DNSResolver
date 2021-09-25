@@ -1,14 +1,14 @@
 package com.dilatush.dns.message;
 
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
+import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
-import com.dilatush.dns.rr.DNSResourceRecord;
 
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.util.*;
-
-import static com.dilatush.util.General.isNull;
 
 //   +----------------------------------------+
 //   | See RFC 1035 and RFC 5395 for details. |
@@ -197,7 +197,7 @@ public class DNSMessage {
                 result = question.encode( msgBuffer, offsets );
                 if( result.ok() ) continue;
                 if( result.cause() instanceof BufferOverflowException ) continue bufferSizes;
-                return encodeOutcome.notOk( result.msg() );
+                return encodeOutcome.notOk( result.msg(), result.cause() );
             }
 
             // encode our answers...
@@ -205,7 +205,7 @@ public class DNSMessage {
                 result = answer.encode( msgBuffer, offsets );
                 if( result.ok() ) continue;
                 if( result.cause() instanceof BufferOverflowException ) continue bufferSizes;
-                return encodeOutcome.notOk( result.msg() );
+                return encodeOutcome.notOk( result.msg(), result.cause() );
             }
 
             // encode our authorities...
@@ -213,7 +213,7 @@ public class DNSMessage {
                 result = authority.encode( msgBuffer, offsets );
                 if( result.ok() ) continue;
                 if( result.cause() instanceof BufferOverflowException ) continue bufferSizes;
-                return encodeOutcome.notOk( result.msg() );
+                return encodeOutcome.notOk( result.msg(), result.cause() );
             }
 
             // encode our additional records...
@@ -221,7 +221,7 @@ public class DNSMessage {
                 result = additionalRecord.encode( msgBuffer, offsets );
                 if( result.ok() ) continue;
                 if( result.cause() instanceof BufferOverflowException ) continue bufferSizes;
-                return encodeOutcome.notOk( result.msg() );
+                return encodeOutcome.notOk( result.msg(), result.cause() );
             }
 
             // if we make it here, then we've encoded the whole thing - flip the buffer and skedaddle...
@@ -230,7 +230,10 @@ public class DNSMessage {
         }
 
         // if we get here, that means we couldn't fit the message even into the largest possible TCP message...
-        return encodeOutcome.notOk( "Message is too large to encode (over 64k bytes)" );
+        return encodeOutcome.notOk(
+                "Message is too large to encode (over 64k bytes)",
+                new DNSResolverException( "64k encoder buffer overflowed", DNSResolverError.ENCODER_BUFFER_OVERFLOW )
+        );
     }
 
 
@@ -244,16 +247,14 @@ public class DNSMessage {
      */
     public static Outcome<DNSMessage> decode( final ByteBuffer _msgBuffer ) {
 
-        // make sure we actually HAVE a message buffer...
-        if( isNull( _msgBuffer) )
-            return outcome.notOk( "Missing message buffer" );
+        Checks.required( _msgBuffer );
 
         // instantiate a builder for us to build the decoded message as we go...
         Builder builder = new Builder();
 
         // if the message buffer is smaller than the DNS message header, we have a problem...
         if( _msgBuffer.remaining() < 12 )
-            return outcome.notOk( "Message buffer is smaller than message header" );
+            return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
         // decode the 16-bit ID value...
         builder.setId( 0xFFFF & _msgBuffer.getShort() );
@@ -281,7 +282,7 @@ public class DNSMessage {
         for( int i = 0; i < quc; i++ ) {
             Outcome<DNSQuestion> questionOutcome = DNSQuestion.decode( _msgBuffer );
             if( questionOutcome.notOk() )
-                return outcome.notOk( questionOutcome.msg() );
+                return outcome.notOk( questionOutcome.msg(), questionOutcome.cause() );
             builder.addQuestion( questionOutcome.info() );
         }
 
@@ -289,7 +290,7 @@ public class DNSMessage {
         for( int i = 0; i < anc; i++ ) {
             Outcome<? extends DNSResourceRecord> answerOutcome = DNSResourceRecord.decode( _msgBuffer );
             if( answerOutcome.notOk() )
-                return outcome.notOk( answerOutcome.msg() );
+                return outcome.notOk( answerOutcome.msg(), answerOutcome.cause() );
             builder.addAnswer( answerOutcome.info() );
         }
 
@@ -297,7 +298,7 @@ public class DNSMessage {
         for( int i = 0; i < auc; i++ ) {
             Outcome<? extends DNSResourceRecord> authorityOutcome = DNSResourceRecord.decode( _msgBuffer );
             if( authorityOutcome.notOk() )
-                return outcome.notOk( authorityOutcome.msg() );
+                return outcome.notOk( authorityOutcome.msg(), authorityOutcome.cause() );
             builder.addAuthority( authorityOutcome.info() );
         }
 
@@ -305,7 +306,7 @@ public class DNSMessage {
         for( int i = 0; i < adc; i++ ) {
             Outcome<? extends DNSResourceRecord> additionalOutcome = DNSResourceRecord.decode( _msgBuffer );
             if( additionalOutcome.notOk() )
-                return outcome.notOk( additionalOutcome.msg() );
+                return outcome.notOk( additionalOutcome.msg(), additionalOutcome.cause() );
             builder.addAdditionalRecord( additionalOutcome.info() );
         }
 

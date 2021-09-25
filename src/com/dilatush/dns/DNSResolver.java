@@ -4,6 +4,8 @@ package com.dilatush.dns;
 // TODO: Get rid of protected everywhere
 // TODO: Change terminology from "recursive" and "iterative" to "forwarding" and "recursive"
 // TODO: Comments and Javadocs...
+// TODO: make all errors report a code...
+// TODO: replace all isNull and x == null with Checks.required()
 
 
 import com.dilatush.dns.agent.*;
@@ -78,7 +80,7 @@ public class DNSResolver {
      * @throws DNSException if there is a problem instantiating {@link DNSNIO}.
      */
     private DNSResolver( final ExecutorService _executor, final IPVersion _ipVersion, final List<AgentParams> _agentParams,
-                         final int _maxCacheSize, final long _maxAllowableTTLMillis ) throws DNSException {
+                         final int _maxCacheSize, final long _maxAllowableTTLMillis ) throws DNSResolverException {
 
         executor      = _executor;
         nio           = new DNSNIO();
@@ -322,7 +324,7 @@ public class DNSResolver {
             try {
                 return outcomeResolver.ok( new DNSResolver( executor, ipVersion, agentParams, maxCacheSize, maxAllowableTTLMillis ) );
             }
-            catch( DNSException _e ) {
+            catch( DNSResolverException _e ) {
                 return outcomeResolver.notOk( "Problem creating DNSResolver", _e );
             }
         }

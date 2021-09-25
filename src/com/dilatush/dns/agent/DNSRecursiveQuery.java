@@ -2,6 +2,8 @@ package com.dilatush.dns.agent;
 
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolver.AgentParams;
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
 import com.dilatush.dns.cache.DNSCache;
 import com.dilatush.dns.message.*;
 import com.dilatush.dns.rr.*;
@@ -118,7 +120,10 @@ public class DNSRecursiveQuery extends DNSQuery {
             // if we STILL have no IPs for name servers, we're dead (this really should never happen until the heat death of the universe)...
             if( nsIPs.isEmpty() ) {
                 queryLog.log( "Could not find any root name server IP addresses" );
-                return queryOutcome.notOk( "Could not find any root name server IP addresses", null, new QueryResult( queryMessage, null, queryLog ) );
+                return queryOutcome.notOk(
+                        "Could not find any root name server IP addresses",
+                        new DNSResolverException( "No root servers", DNSResolverError.NO_ROOT_SERVERS ),
+                        new QueryResult( queryMessage, null, queryLog ) );
             }
         }
 
@@ -150,11 +155,10 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
 
-        if( sendOutcome.notOk() )
-            return queryOutcome.notOk( sendOutcome.msg(), sendOutcome.cause() );
-
-        return queryOutcome.ok( new QueryResult( queryMessage, null, queryLog ) );
-    }
+        return sendOutcome.ok()
+                ? queryOutcome.ok( new QueryResult( queryMessage, null, queryLog ) )
+                : queryOutcome.notOk( sendOutcome.msg(), sendOutcome.cause() );
+   }
 
 
     protected void handleOK() {

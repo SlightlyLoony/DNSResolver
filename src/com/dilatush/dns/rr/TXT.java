@@ -4,10 +4,13 @@ package com.dilatush.dns.rr;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
-import com.dilatush.util.Outcome;
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.util.Checks;
+import com.dilatush.util.Outcome;
 
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
@@ -16,8 +19,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-
-import static com.dilatush.util.General.isNull;
 
 /**
  * Instances of this class represent a DNS TXT Resource Record.  Nominally these contain any number of text strings (though the encoding is
@@ -71,18 +72,23 @@ public class TXT extends DNSResourceRecord {
             final DNSDomainName _name, final DNSRRClass _klass, final int _ttl,
             final List<ByteBuffer> _data ) {
 
-        if( isNull( _name, _klass, _data ) )
-            return outcome.notOk( "Missing argument (name, class, or data)" );
+        Checks.required( _name, _klass, _data );
 
         // verify that the data is present, and is between 0 and 255 bytes long, and build decoded ASCII strings...
         List<String> strings = new ArrayList<>();
         for( ByteBuffer data : _data ) {
 
-            // verify the data...
+            // validate the data...
             if( data == null )
-                return outcome.notOk( "Missing string data" );
+                return outcome.notOk(
+                        "Missing string data",
+                        new DNSResolverException( "Missing string data", DNSResolverError.INVALID_RESOURCE_RECORD_DATA )
+                );
             if( data.limit() > 255 )
-                return outcome.notOk( "String data too long: " + data.limit() );
+                return outcome.notOk(
+                        "String data too long: " + data.limit(),
+                        new DNSResolverException( "String over 255 bytes long", DNSResolverError.INVALID_RESOURCE_RECORD_DATA )
+                );
 
             // build our decoded ASCII string...
             strings.add( new String( data.array(), StandardCharsets.US_ASCII) );
@@ -129,14 +135,14 @@ public class TXT extends DNSResourceRecord {
 
             // make sure we have a byte to fetch the length...
             if( _msgBuffer.remaining() < 1 )
-                return outcome.notOk( "Message buffer underflow" );
+                return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
             // get the length of this "string"...
             int stringLength = _msgBuffer.get() & 0xFF;
 
             // make sure we have the bytes to fetch the "string"...
             if( _msgBuffer.remaining() < stringLength )
-                return outcome.notOk( "Message buffer underflow" );
+                return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
             // get the "string" as bytes...
             ByteBuffer dst = ByteBuffer.allocate( stringLength );
@@ -158,10 +164,6 @@ public class TXT extends DNSResourceRecord {
             // decrement our bytes count...
             bytes -= stringLength + 1;  // the +1 is to account for the length byte prefix...
         }
-
-        // when we get here, we should have zero bytes remaining...
-        if( bytes != 0 )
-            return outcome.notOk( "Resource record data length does not match the decoded data length" );
 
         // if we made it here, then all is good, and we can leave with a shiny new instance...
         return outcome.ok( new TXT( _init.name(), _init.klass(), _init.ttl(), _init.dataLength(), data, ascii ) );
@@ -188,7 +190,7 @@ public class TXT extends DNSResourceRecord {
 
             // make sure we have room in our buffer to encode this "string"...
             if( _msgBuffer.remaining() < src.remaining() + 1 )  // the +1 is to allow for the length prefix...
-                return encodeOutcome.notOk( new BufferOverflowException() );
+                return outcome.notOk( "Encoder buffer overflow", new DNSResolverException( "Buffer overflow", DNSResolverError.ENCODER_BUFFER_OVERFLOW ) );
 
             // encode the length prefix...
             _msgBuffer.put( (byte) src.remaining() );

@@ -4,16 +4,15 @@ package com.dilatush.dns.rr;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
-import com.dilatush.util.Outcome;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.util.Checks;
+import com.dilatush.util.Outcome;
 
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.util.Map;
-
-import static com.dilatush.util.General.isNull;
 
 /**
  * Instances of this class represent a DNS Resource Record for the canonical domain name associated with this resource record's domain name (the alias).
@@ -61,8 +60,7 @@ public class CNAME extends DNSResourceRecord {
             final DNSDomainName _name, final DNSRRClass _klass, final int _ttl,
             final DNSDomainName _cname ) {
 
-        if( isNull( _name, _klass, _cname ) )
-            return outcome.notOk( "Missing argument (name, class, or cname)" );
+        Checks.required( _name, _klass, _cname );
 
         return outcome.ok( new CNAME( _name, _klass, _ttl, 4, _cname ) );
     }
@@ -98,7 +96,7 @@ public class CNAME extends DNSResourceRecord {
         // decode the domain name...
         Outcome<DNSDomainName> dnOutcome = DNSDomainName.decode( _msgBuffer );
         if( dnOutcome.notOk() )
-            return outcome.notOk(dnOutcome.msg() );
+            return outcome.notOk( dnOutcome.msg(), dnOutcome.cause() );
 
         // create and return our instance...
         return outcome.ok( new CNAME(_init.name(), _init.klass(), _init.ttl(), _init.dataLength(), dnOutcome.info() ) );

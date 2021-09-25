@@ -1,11 +1,13 @@
 package com.dilatush.dns.message;
 
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
+import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
-import static com.dilatush.util.General.isNull;
 import static com.dilatush.util.Strings.isEmpty;
 
 /**
@@ -65,15 +67,24 @@ public class DNSLabel {
 
         // empty strings are not allowed...
         if( isEmpty( _text ) )
-            return outcome.notOk( "Cannot create an empty DNS label" );
+            return outcome.notOk(
+                    "Cannot create an empty DNS label",
+                    new DNSResolverException( "Empty label", DNSResolverError.INVALID_DOMAIN_NAME )
+            );
 
         // strings with more than 63 characters are not allowed...
         if( _text.length() > 63 )
-            return outcome.notOk( "Cannot have more than 63 characters in a label: " + _text );
+            return outcome.notOk(
+                    "Cannot have more than 63 characters in a label: " + _text,
+                    new DNSResolverException( "Label over 63 characters long", DNSResolverError.INVALID_DOMAIN_NAME )
+            );
 
         // first we make sure that neither the first nor the last character is a hyphen...
         if( (_text.charAt( 0 ) == '-') || (_text.charAt( _text.length() - 1 ) == '-') )
-            return outcome.notOk( "Hyphens may not be either the first or last character in a label: " + _text );
+            return outcome.notOk(
+                    "Hyphens may not be either the first or last character in a label: " + _text,
+                    new DNSResolverException( "Leading or trailing hyphen", DNSResolverError.INVALID_DOMAIN_NAME )
+            );
 
         // to lower case for case insensitivity, then iterate over all the characters, checking them...
         for( char c : _text.toLowerCase().toCharArray() ) {
@@ -83,7 +94,7 @@ public class DNSLabel {
                     ((c >= '0') && (c <= '9')) ||
                      (c == '-')
             ))
-                return outcome.notOk( "Illegal character in label: " + _text );
+                return outcome.notOk( "Illegal character in label: " + _text, new DNSResolverException( "Illegal character", DNSResolverError.INVALID_DOMAIN_NAME ) );
         }
 
         // if we make it here, then the given text is fine, and we can make a label...
@@ -101,16 +112,16 @@ public class DNSLabel {
      */
     public static Outcome<DNSLabel> decode( final ByteBuffer _buffer ) {
 
-        if( isNull( _buffer ) )
-            return outcome.notOk( "Buffer is missing" );
+        Checks.required( _buffer);
+
         if( !_buffer.hasRemaining() )
-            return outcome.notOk( "Buffer has no bytes remaining");
+            return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
         // get the number of bytes (which is also the number of characters) in the label...
         int length = _buffer.get() & 0xFF;
 
         if( length > _buffer.remaining() )
-            return outcome.notOk( "Unexpected end of buffer" );
+            return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
         byte[] b = new byte[length];
         _buffer.get( b );

@@ -4,10 +4,13 @@ package com.dilatush.dns.rr;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
-import com.dilatush.util.Outcome;
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.util.Checks;
+import com.dilatush.util.Outcome;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -16,8 +19,6 @@ import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Map;
-
-import static com.dilatush.util.General.isNull;
 
 /**
  * Instances of this class represent a DNS Resource Record for an IPv4 Internet address.
@@ -66,8 +67,7 @@ public class A extends DNSResourceRecord {
             final DNSDomainName _name, final DNSRRClass _klass, final int _ttl,
             final Inet4Address _address ) {
 
-        if( isNull( _name, _klass, _address ) )
-            return outcome.notOk( "Missing argument (name, class, or address)" );
+        Checks.required( _name, _klass, _address );
 
         return outcome.ok( new A( _name, _klass, _ttl, 4, _address ) );
     }
@@ -102,7 +102,9 @@ public class A extends DNSResourceRecord {
 
         // this resource record's data should always be 4 bytes long; check it...
         if( _init.dataLength() != 4 )
-            return outcome.notOk( "Data length is not four bytes" );
+            return outcome.notOk(
+                    "Data length is not four bytes: " + _init.dataLength(),
+                    new DNSResolverException( "A record data is not four bytes long", DNSResolverError.INVALID_RESOURCE_RECORD_DATA ) );
 
         // decode the IPv4 address...
         byte[] addrBytes = new byte[4];
@@ -114,7 +116,7 @@ public class A extends DNSResourceRecord {
 
         // this should be impossible, as it is only thrown if the wrong number of bytes is supplied...
         catch (UnknownHostException e) {
-            return outcome.notOk( "We got the impossible UnknownHostException" );
+            throw new IllegalStateException( "Impossible UnknownHostException" );
         }
     }
 
@@ -135,7 +137,7 @@ public class A extends DNSResourceRecord {
     protected Outcome<?> encodeChild( ByteBuffer _msgBuffer, Map<String, Integer> _nameOffsets ) {
 
         if( _msgBuffer.remaining() < 4 )
-            return encodeOutcome.notOk( new BufferOverflowException() );
+            return outcome.notOk( "Encoder buffer overflow", new DNSResolverException( "Buffer overflow", DNSResolverError.ENCODER_BUFFER_OVERFLOW ) );
 
         _msgBuffer.put( address.getAddress() );
         return encodeOutcome.ok();

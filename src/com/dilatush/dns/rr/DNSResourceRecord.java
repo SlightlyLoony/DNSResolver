@@ -4,6 +4,8 @@ package com.dilatush.dns.rr;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
+import com.dilatush.dns.DNSResolverError;
+import com.dilatush.dns.DNSResolverException;
 import com.dilatush.util.Outcome;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
@@ -94,7 +96,7 @@ public abstract class DNSResourceRecord {
 
         // at this point we must have at least 6 bytes to encode the TTL and resource data length fields, so check that...
         if( _msgBuffer.remaining() < 6 )
-            return encodeOutcome.notOk( new BufferOverflowException() );
+            return outcome.notOk( "Encoder buffer overflow", new DNSResolverException( "Buffer overflow", DNSResolverError.ENCODER_BUFFER_OVERFLOW ) );
 
         // encode the TTL...
         _msgBuffer.putInt( (int)ttl );
@@ -151,22 +153,22 @@ public abstract class DNSResourceRecord {
         // decode the domain name that this resource pertains to...
         Outcome<DNSDomainName> nameOutcome = DNSDomainName.decode( _msgBuffer );
         if( nameOutcome.notOk() )
-            return outcome.notOk( nameOutcome.msg() );
+            return outcome.notOk( nameOutcome.msg(), nameOutcome.cause() );
 
         // decode this resource record type...
         int typeCodePos = _msgBuffer.position();
         Outcome<DNSRRType> typeOutcome = DNSRRType.decode( _msgBuffer );
         if( typeOutcome.notOk() )
-            return outcome.notOk(typeOutcome.msg() );
+            return outcome.notOk( typeOutcome.msg(), typeOutcome.cause() );
 
         // decode this resource record class (which is basically always IN for internet)...
         Outcome<DNSRRClass> classOutcome = DNSRRClass.decode( _msgBuffer );
         if(classOutcome.notOk() )
-            return outcome.notOk( classOutcome.msg() );
+            return outcome.notOk( classOutcome.msg(), classOutcome.cause() );
 
         // at this point we must have at least 6 bytes left to decode, so check that...
         if( _msgBuffer.remaining() < 6 )  // four bytes of TTL, two bytes of dataLength...
-            return outcome.notOk( "Insufficient room in message buffer" );
+            return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
         // decode the TTL and the resource data length...
         long ttl = 0xFFFFFFFFL & _msgBuffer.getInt();
@@ -174,7 +176,7 @@ public abstract class DNSResourceRecord {
 
         // make sure we have all the resource data...
         if( _msgBuffer.remaining() < dataLength )
-            return outcome.notOk( "Buffer underflow: not enough bytes for data length" );
+            return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
         // create the base class initializer, so we can hand it to the subclass decoder...
         Init init = new Init( nameOutcome.info(), typeOutcome.info(), classOutcome.info(), ttl, (short) dataLength );
@@ -203,7 +205,10 @@ public abstract class DNSResourceRecord {
         // make sure we decoded the same number of bytes that we decoded for the resource data length...
         int decodedDataBytes = _msgBuffer.position() - firstDataPos;
         if( decodedDataBytes != init.dataLength )
-            return outcome.notOk( "Data length encoded as " + init.dataLength + ", but decoded " + decodedDataBytes + " bytes" );
+            return outcome.notOk(
+                    "Data length encoded as " + init.dataLength + ", but decoded " + decodedDataBytes + " bytes",
+                    new DNSResolverException( "Decoded data length mismatch", DNSResolverError.INVALID_RESOURCE_RECORD_DATA )
+            );
 
         // whew - we made it!
         return result;
