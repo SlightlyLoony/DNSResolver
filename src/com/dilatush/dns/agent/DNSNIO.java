@@ -1,6 +1,7 @@
 package com.dilatush.dns.agent;
 
 import com.dilatush.dns.DNSException;
+import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverException;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.General;
@@ -18,17 +19,20 @@ import java.util.logging.Logger;
 import static com.dilatush.dns.DNSResolverError.NETWORK;
 import static java.lang.System.currentTimeMillis;
 
+
+/**
+ * A single instance of this class manages the network I/O in a single thread for a {@link DNSResolver} instance.  Note that instances of {@link DNSChannel} and its subclasses
+ * are called by this class's <i>IO Runner</i> thread to do the actual work of connecting (for TCP), reading from, and writing to the network.
+ */
 public class DNSNIO {
 
     final static private Logger LOGGER = General.getLogger();
 
-    public  static       ExecutorService  alternateExecutor;
     public  static       Long             alternateTimeoutCheckIntervalMillis;
 
     private static final long             defaultTimeoutCheckIntervalMillis = 50;
 
     private        final long             timeoutCheckIntervalMillis;
-    protected      final ExecutorService  executor;
     private        final Selector         selector;
     private        final Thread           ioRunner;
     private        final Timeouts         timeouts;
@@ -55,9 +59,6 @@ public class DNSNIO {
         catch( IOException _e ) {
             throw new DNSResolverException( "Problem opening selector", _e, NETWORK );
         }
-
-        // use the alternate executor if it was supplied; otherwise, use a default executor...
-        executor = (alternateExecutor != null) ? alternateExecutor : new ExecutorService();
 
         // use the alternate timeout check interval if it was supplied; otherwise, use the default...
         timeoutCheckIntervalMillis = (alternateTimeoutCheckIntervalMillis != null) ? alternateTimeoutCheckIntervalMillis : defaultTimeoutCheckIntervalMillis;
