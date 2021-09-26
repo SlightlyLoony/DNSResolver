@@ -1,6 +1,5 @@
 package com.dilatush.dns.agent;
 
-import com.dilatush.dns.DNSException;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverException;
 import com.dilatush.util.ExecutorService;
@@ -26,18 +25,13 @@ import static java.lang.System.currentTimeMillis;
  */
 public class DNSNIO {
 
-    final static private Logger LOGGER = General.getLogger();
+    final static private Logger    LOGGER = General.getLogger();
 
-    public  static       Long             alternateTimeoutCheckIntervalMillis;
+    private static final long      TIMEOUT_CHECK_INTERVAL_MILLIS = 50;
 
-    private static final long             defaultTimeoutCheckIntervalMillis = 50;
-
-    private        final long             timeoutCheckIntervalMillis;
-    private        final Selector         selector;
-    private        final Thread           ioRunner;
-    private        final Timeouts         timeouts;
-
-    private              long             nextTimeoutCheck;
+    private        final Selector  selector;         // the Selector where DNSChannels register their I/O interests...
+    private        final Thread    ioRunner;         // the single "IO Runner" thread that does all the actual network I/O...
+    private        final Timeouts  timeouts;         // the collection of active timeouts...
 
 
     /**
@@ -45,7 +39,7 @@ public class DNSNIO {
      * TCP) I/O for the DNS resolver.  By default, received data and timeout handlers are called through a single-threaded {@link ExecutorService} instance (with a daemon thread
      * and a queue of 100).
      *
-     * @throws DNSException if the selector can't be opened for some reason.
+     * @throws DNSResolverException if the selector can't be opened for some reason.
      */
     public DNSNIO() throws DNSResolverException {
 
@@ -60,9 +54,6 @@ public class DNSNIO {
             throw new DNSResolverException( "Problem opening selector", _e, NETWORK );
         }
 
-        // use the alternate timeout check interval if it was supplied; otherwise, use the default...
-        timeoutCheckIntervalMillis = (alternateTimeoutCheckIntervalMillis != null) ? alternateTimeoutCheckIntervalMillis : defaultTimeoutCheckIntervalMillis;
-
         // create and start our I/O thread...
         ioRunner = new Thread( this::ioLoop );
         ioRunner.setDaemon( true );
@@ -71,49 +62,68 @@ public class DNSNIO {
     }
 
 
-    protected void register( final DNSChannel _dnsChannel, final SelectableChannel _channel, final int _ops ) throws ClosedChannelException {
-        _channel.register( selector, _ops, _dnsChannel );
+    /**
+     * Register the given operations (as defined by {@link SelectableChannel#register(Selector,int,Object)}) for the given {@link SelectableChannel} on this instance's selector.
+     * The given {@link DNSChannel} will be attached.
+     *
+     * @param _dnsChannel The {@link DNSChannel} to attach.
+     * @param _channel The {@link SelectableChannel} to register operations for.
+     * @param _operations The operations to register (see {@link SelectableChannel#register(Selector,int,Object)}).
+     * @throws ClosedChannelException if the channel is closed.
+     */
+    protected void register( final DNSChannel _dnsChannel, final SelectableChannel _channel, final int _operations ) throws ClosedChannelException {
+        _channel.register( selector, _operations, _dnsChannel );
     }
 
 
+    /**
+     * Add the given timeout to the collection of active timeouts.
+     *
+     * @param _timeout The timeout to add.
+     */
     protected void addTimeout( final AbstractTimeout _timeout ) {
         timeouts.add( _timeout );
     }
 
 
     /**
-     * The main I/O loop for {@link DNSServerAgent}s.
+     * The main I/O loop for {@link DNSServerAgent}s.  In normal operation the {@code while()} loop will run forever.
      */
     private void ioLoop() {
+
+        // the earliest system time that we should do a timeout check...
+        long nextTimeoutCheck = currentTimeMillis() + TIMEOUT_CHECK_INTERVAL_MILLIS;
 
         // we're going to loop here basically forever...
         while( !ioRunner.isInterrupted() ) {
 
-            // any exceptions in this code are a serious problem; we just log and make no attempt to recover...
+            // any exceptions in this code are a serious problem; if we get one, we just log it and make no attempt to recover...
             try {
-                // select and get any keys...
-                int numKeys = selector.select( timeoutCheckIntervalMillis );
-                Set<SelectionKey> keys = selector.selectedKeys();
 
-                // handle any keys we got...
+                // select and get any keys, but timeout when it's next time to check our timeouts...
+                selector.select( nextTimeoutCheck - currentTimeMillis() );
+
+                // iterate over any selected keys, and handle them...
+                Set<SelectionKey> keys = selector.selectedKeys();
                 Iterator<SelectionKey> keyIterator = keys.iterator();
                 while( keyIterator.hasNext() ) {
 
+                    // get the next key, extract and safely cast its attachment...
                     SelectionKey key = keyIterator.next();
                     DNSTCPChannel tcp  = (key.attachment() instanceof DNSTCPChannel) ? (DNSTCPChannel) key.attachment() : null;
                     DNSChannel channel = (key.attachment() instanceof DNSChannel)    ? (DNSChannel)    key.attachment() : null;
 
-                    if( key.isValid() && key.isWritable() ) {
-                        if( channel != null) channel.write();
-                    }
+                    // handle connecting (TCP only)...
+                    if( key.isValid() && key.isConnectable() && (tcp != null) )
+                        tcp.tcpChannel.finishConnect();
 
-                    if( key.isValid() && key.isReadable() ) {
-                        if( channel != null ) channel.read();
-                    }
+                    // handle writing to the network...
+                    if( key.isValid() && key.isWritable() && (channel != null) )
+                        channel.write();
 
-                    if( key.isValid() && key.isConnectable() ) {
-                        if( tcp != null ) tcp.tcpChannel.finishConnect();
-                    }
+                    // handle reading from the network...
+                    if( key.isValid() && key.isReadable() && (channel != null) )
+                        channel.read();
 
                     // get rid the key we just processed...
                     keyIterator.remove();
@@ -126,14 +136,16 @@ public class DNSNIO {
                     timeouts.check();
 
                     // figure out when we should check again...
-                    nextTimeoutCheck = currentTimeMillis() + timeoutCheckIntervalMillis;
+                    nextTimeoutCheck = currentTimeMillis() + TIMEOUT_CHECK_INTERVAL_MILLIS;
                 }
             }
 
-            // getting here means something majorly wrong happened; log and let the loop die...
-            catch( IOException _e ) {
+            // getting here means something seriously wrong happened; log and let the loop die...
+            catch( Throwable _e ) {
 
                 LOGGER.log( Level.SEVERE, "Unhandled exception in NIO selector loop", _e );
+
+                // this will cause the IO Runner thread to exit, and all I/O will cease...
                 break;
             }
         }
