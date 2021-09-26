@@ -13,6 +13,9 @@ import java.util.Deque;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+/**
+ * The abstract base class for {@link DNSUDPChannel} and {@link DNSTCPChannel}.
+ */
 public abstract class DNSChannel {
 
     private   static final Logger LOGGER = General.getLogger();
@@ -55,9 +58,9 @@ public abstract class DNSChannel {
      */
     protected abstract Outcome<?> send( final DNSMessage _msg );
 
-    protected abstract void write();
-    protected abstract void read();
-    protected abstract void close();
+    protected abstract void       write();
+    protected abstract void       read();
+    protected abstract void       close();
 
 
     /**
