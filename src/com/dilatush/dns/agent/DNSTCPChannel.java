@@ -11,17 +11,16 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
-import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static com.dilatush.util.General.getLogger;
 import static java.nio.channels.SelectionKey.*;
 
 public class DNSTCPChannel extends DNSChannel {
 
-    private static final Logger                       LOGGER        = Logger.getLogger( new Object(){}.getClass().getEnclosingClass().getCanonicalName() );
-    private static final long                         LINGER_MILLIS = 3000;   // allow TCP connection to linger for 3 seconds after last data sent or received...
+    private static final Logger        LOGGER        = getLogger();
 
     public        SocketChannel        tcpChannel;
     private final ByteBuffer           prefix = ByteBuffer.allocate( 2 );
@@ -87,11 +86,6 @@ public class DNSTCPChannel extends DNSChannel {
         return outcome.ok();
     }
 
-    @Override
-    protected void register( final Selector _selector, final int _operations, final Object _attachment ) throws ClosedChannelException {
-        tcpChannel.register( _selector, _operations, _attachment );
-    }
-
 
     @Override
     public void write() {
@@ -112,6 +106,7 @@ public class DNSTCPChannel extends DNSChannel {
                     break;
 
             } catch( IOException _e ) {
+                // TODO: error handling...
                 _e.printStackTrace();
             }
         }
@@ -120,6 +115,7 @@ public class DNSTCPChannel extends DNSChannel {
             try {
                 nio.register( this, tcpChannel, OP_READ );
             } catch( ClosedChannelException _e ) {
+                // TODO: error handling...
                 _e.printStackTrace();
             }
         }
@@ -156,6 +152,7 @@ public class DNSTCPChannel extends DNSChannel {
             }
 
         } catch( IOException _e ) {
+            // TODO: error handling...
             _e.printStackTrace();
         }
     }

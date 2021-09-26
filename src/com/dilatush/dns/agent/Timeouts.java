@@ -4,13 +4,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
 
+import static com.dilatush.util.General.getLogger;
+
 /**
  * Instances of this class efficiently manage a collection of timeouts.  Methods allow for adding new timeouts and checking timeouts to see if they've
  * actually timed out.
  */
 public class Timeouts {
 
-    final static private Logger LOGGER = Logger.getLogger( new Object(){}.getClass().getEnclosingClass().getCanonicalName() );
+    final static private Logger LOGGER = getLogger();
 
     // The list of active timeouts, in order of their expiration times (earlier times first)...
     private final List<AbstractTimeout> timeouts = new ArrayList<>();

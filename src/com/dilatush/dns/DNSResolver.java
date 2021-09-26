@@ -49,6 +49,7 @@ import static com.dilatush.dns.message.DNSRRType.*;
  * <p>Instances of this class include an optional cache of the results of DNS queries, which can greatly increase the resolver's performance when multiple queries to the same
  * domain are made.  This is a very common occurrence in almost any application, so using the cache is highly recommended.</p>
  */
+@SuppressWarnings( "unused" )
 public class DNSResolver {
 
     private static final Outcome.Forge<DNSResolver> outcomeResolver    = new Outcome.Forge<>();
@@ -74,7 +75,7 @@ public class DNSResolver {
      * @param _agentParams Specifies the parameters for recursive DNS server agents that may be used by this resolver.
      * @param _maxCacheSize Specifies the maximum DNS resource record cache size.
      * @param _maxAllowableTTLMillis Specifies the maximum allowable TTL (in milliseconds) for a resource record in the cache.
-     * @throws DNSException if there is a problem instantiating {@link DNSNIO}.
+     * @throws DNSResolverException if there is a problem instantiating {@link DNSNIO}.
      */
     private DNSResolver( final ExecutorService _executor, final IPVersion _ipVersion, final List<AgentParams> _agentParams,
                          final int _maxCacheSize, final long _maxAllowableTTLMillis ) throws DNSResolverException {

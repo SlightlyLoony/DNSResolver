@@ -12,16 +12,16 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.DatagramChannel;
-import java.nio.channels.Selector;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static com.dilatush.util.General.getLogger;
 import static java.nio.channels.SelectionKey.OP_READ;
 import static java.nio.channels.SelectionKey.OP_WRITE;
 
 public class DNSUDPChannel extends DNSChannel {
 
-    private static final Logger LOGGER = Logger.getLogger( new Object(){}.getClass().getEnclosingClass().getCanonicalName() );
+    private static final Logger LOGGER = getLogger();
 
     private DatagramChannel udpChannel;
 
@@ -69,13 +69,6 @@ public class DNSUDPChannel extends DNSChannel {
         return outcome.ok();
     }
 
-    @Override
-    protected void register( final Selector _selector, final int _operations, final Object _attachment ) throws ClosedChannelException {
-        udpChannel.register( _selector, _operations, _attachment );
-    }
-
-
-    // TODO: error handling needed...
 
     @Override
     public void write() {
@@ -86,6 +79,7 @@ public class DNSUDPChannel extends DNSChannel {
             try {
                 udpChannel.write( buffer );
             } catch( IOException _e ) {
+                // TODO: error handling needed...
                 _e.printStackTrace();
             }
         }
@@ -94,6 +88,7 @@ public class DNSUDPChannel extends DNSChannel {
             try {
                 nio.register( this, udpChannel, OP_READ );
             } catch( ClosedChannelException _e ) {
+                // TODO: error handling needed...
                 _e.printStackTrace();
             }
         }
@@ -114,6 +109,7 @@ public class DNSUDPChannel extends DNSChannel {
         }
 
         catch( IOException _e ) {
+            // TODO: error handling needed...
             _e.printStackTrace();
         }
     }

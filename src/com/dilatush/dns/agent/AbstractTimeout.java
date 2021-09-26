@@ -20,7 +20,6 @@ public abstract class AbstractTimeout {
      * @param _timeoutMS      The time (in milliseconds) from now that this timeout should expire.
      */
     protected AbstractTimeout( final long _timeoutMS ) {
-
         expiration     = System.currentTimeMillis() + _timeoutMS;  // calculating the system time at timeout expiration...
     }
 
@@ -50,6 +49,9 @@ public abstract class AbstractTimeout {
     }
 
 
+    /**
+     * Invoked when a timeout occurs.
+     */
     protected abstract void onTimeout();
 
 
@@ -58,8 +60,9 @@ public abstract class AbstractTimeout {
      * {@code false} if the cancellation failed (because the timeout has already been cancelled or because the timeout handler has already been
      * called).
      *
-     * @return the boolean
+     * @return {@code true} if cancellation was successful, and the timeout handler will not be called.
      */
+    @SuppressWarnings( "UnusedReturnValue" )
     public synchronized boolean cancel() {
 
         // if we've already been cancelled or expired, just return false...

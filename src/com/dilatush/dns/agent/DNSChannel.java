@@ -8,8 +8,6 @@ import com.dilatush.util.Outcome;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.ClosedChannelException;
-import java.nio.channels.Selector;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.logging.Level;
@@ -17,18 +15,26 @@ import java.util.logging.Logger;
 
 public abstract class DNSChannel {
 
-    private static final Logger LOGGER = General.getLogger();
+    private   static final Logger LOGGER = General.getLogger();
 
     protected static final Outcome.Forge<?> outcome = new Outcome.Forge<>();
 
 
-    protected final DNSServerAgent    agent;
-    protected final DNSNIO            nio;
-    protected final ExecutorService   executor;
-    protected final Deque<ByteBuffer> sendData;
-    protected final InetSocketAddress serverAddress;
+    protected        final DNSServerAgent    agent;          // the agent that owns this channel...
+    protected        final DNSNIO            nio;            // the NIO for this channel to use...
+    protected        final ExecutorService   executor;       // the executor for this channel to use...
+    protected        final Deque<ByteBuffer> sendData;       // the send buffer for this channel...
+    protected        final InetSocketAddress serverAddress;  // the IP and port for this channel to connect to...
 
 
+    /**
+     * Create a new instance of this base class with the given parameters.
+     *
+     * @param _agent The agent that owns this channel.
+     * @param _nio The {@link DNSNIO} for this channel to use for network I/O.
+     * @param _executor The {@link ExecutorService} for this channel to use.
+     * @param _serverAddress The IP address and port for this channel to connect to.
+     */
     protected DNSChannel( final DNSServerAgent _agent, final DNSNIO _nio, final ExecutorService _executor, final InetSocketAddress _serverAddress ) {
 
         Checks.required( _agent, _nio, _executor, _serverAddress );
@@ -41,9 +47,13 @@ public abstract class DNSChannel {
     }
 
 
+    /**
+     * Send the given {@link DNSMessage} via this channel.  The message is sent asynchronously; this method will return immediately.
+     *
+     * @param _msg The {@link DNSMessage} to send.
+     * @return The {@link Outcome Outcome&lt;?&gt;} of the send operation.
+     */
     protected abstract Outcome<?> send( final DNSMessage _msg );
-
-    protected abstract void register( final Selector _selector, final int _operations, final Object _attachment ) throws ClosedChannelException;
 
     protected abstract void write();
     protected abstract void read();

@@ -3,6 +3,7 @@ package com.dilatush.dns.agent;
 import com.dilatush.dns.DNSException;
 import com.dilatush.dns.DNSResolverException;
 import com.dilatush.util.ExecutorService;
+import com.dilatush.util.General;
 
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
@@ -19,7 +20,7 @@ import static java.lang.System.currentTimeMillis;
 
 public class DNSNIO {
 
-    final static private Logger LOGGER = Logger.getLogger( new Object(){}.getClass().getEnclosingClass().getCanonicalName() );
+    final static private Logger LOGGER = General.getLogger();
 
     public  static       ExecutorService  alternateExecutor;
     public  static       Long             alternateTimeoutCheckIntervalMillis;

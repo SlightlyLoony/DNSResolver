@@ -13,6 +13,8 @@ import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static com.dilatush.util.General.getLogger;
+
 
 /**
  * Implements an asynchronous resolver for DNS queries to a particular DNS server.  Any number of resolvers can be instantiated concurrently, but
@@ -27,7 +29,7 @@ public class DNSServerAgent {
     private static final long MIN_TIMEOUT_MILLIS = 5;
     private static final long MAX_TIMEOUT_MILLIS = 15000;
 
-    private static final Logger LOGGER = Logger.getLogger( new Object(){}.getClass().getEnclosingClass().getCanonicalName() );
+    private static final Logger LOGGER = getLogger();
 
     private   static final Outcome.Forge<DNSServerAgent> createOutcome = new Outcome.Forge<>();
     private   static final Outcome.Forge<DNSQuery>       queryOutcome  = new Outcome.Forge<>();

@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static com.dilatush.util.General.breakpoint;
+import static com.dilatush.util.General.initLogging;
 import static java.lang.Thread.sleep;
 
 /**
@@ -22,7 +23,7 @@ public class AsyncAPIExample {
 
     public static void main( final String[] _args ) throws InterruptedException {
 
-        System.getProperties().setProperty( "java.util.logging.config.file", "example-logging.properties" );
+        initLogging( "example-logging.properties" );
 
         System.out.println( "Using forwarding resolver" );
 
