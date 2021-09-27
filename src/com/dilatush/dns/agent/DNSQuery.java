@@ -50,6 +50,7 @@ public abstract class DNSQuery {
 
     protected       DNSServerAgent                  agent;
     protected       DNSTransport                    transport;
+    protected       DNSTransport                    initialTransport;
 
     protected       DNSMessage                      queryMessage;
     protected       DNSMessage                      responseMessage;
@@ -76,8 +77,8 @@ public abstract class DNSQuery {
      *                 either for success or failure.
      */
     protected DNSQuery( final DNSResolver _resolver, final DNSCache _cache, final DNSNIO _nio, final ExecutorService _executor,
-                     final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
-                     final List<AgentParams> _agents, final Consumer<Outcome<QueryResult>> _handler ) {
+                        final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
+                        final List<AgentParams> _agents, final Consumer<Outcome<QueryResult>> _handler ) {
 
         Checks.required( _resolver, _cache, _nio, _executor, _activeQueries, _question, _handler );
 
@@ -190,6 +191,16 @@ public abstract class DNSQuery {
         // if we got a valid response, call the subclass' handler for that...
         if( _responseCode == DNSResponseCode.OK ) {
             handleOK();
+            return;
+        }
+
+        // if we got a name error, and the response is authoritative, we're done...
+        else if( (_responseCode == DNSResponseCode.NAME_ERROR) && responseMessage.authoritativeAnswer ) {
+            handler.accept( queryOutcome.notOk(
+                    "Domain does not exist: '" + question.qname + "'",
+                    new DNSServerException( "Domain does not exist: '" + question.qname + "'", _responseCode ),
+                    new QueryResult( queryMessage, null, queryLog )
+            ) );
             return;
         }
 

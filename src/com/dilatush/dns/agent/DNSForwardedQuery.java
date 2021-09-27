@@ -42,7 +42,7 @@ public class DNSForwardedQuery extends DNSQuery {
         queryLog.log("Initial query" );
         LOGGER.finer( "Initiating new recursive query - ID: " + id + ", " + question.toString() );
 
-        transport = _initialTransport;
+        initialTransport = _initialTransport;
 
         // if we have no agents, then revert to an iterative query...
         if( agents.isEmpty() ) {
@@ -55,6 +55,8 @@ public class DNSForwardedQuery extends DNSQuery {
 
 
     protected Outcome<?> query() {
+
+        transport = initialTransport;
 
         // figure out what agent we're going to use...
         agent = new DNSServerAgent( resolver, this, nio, executor, agents.remove( 0 ) );

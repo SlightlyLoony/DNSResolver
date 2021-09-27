@@ -40,9 +40,6 @@ public class DNSRecursiveQuery extends DNSQuery {
     private final AtomicInteger           subQueries;
     private final List<DNSResourceRecord> answers;
 
-    private       DNSTransport      initialTransport;
-
-
 
     public DNSRecursiveQuery( final DNSResolver _resolver, final DNSCache _cache, final DNSNIO _nio, final ExecutorService _executor,
                               final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
