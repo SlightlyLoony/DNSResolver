@@ -293,6 +293,20 @@ public class DNSResolver {
     }
 
 
+    public static DNSResolver getDefaultRecursiveResolver() {
+        Builder builder = new Builder();
+        return builder.getDNSResolver().info();
+    }
+
+
+    public static DNSResolver getDefaultForwardingResolver( final InetSocketAddress _serverAddress, final String _name ) {
+        Checks.required( _serverAddress, _name );
+        Builder builder = new Builder();
+        builder.addDNSServer( _serverAddress, 5000, 0, _name );
+        return builder.getDNSResolver().info();
+    }
+
+
     /**
      * Instances of this class provide a builder for instances of {@link DNSResolver}.
      */

@@ -3,6 +3,8 @@ package com.dilatush.dns.examples;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
 import com.dilatush.dns.DNSServerException;
+import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Outcome;
 
 import java.net.Inet4Address;
@@ -68,6 +70,9 @@ public class AsyncAPIExample {
 
         // get the text for some FQDNs and print the results...
         resolveText( _api, "yahoo.com", "www.cnn.com", "cnn.com", "google.com", "qqq.cnn.com" );
+
+        // get some resource records for some FQDNs and print the result...
+        resolve( _api, "yahoo.com", "www.cnn.com", "cnn.com", "google.com", "qqq.cnn.com" );
     }
 
 
@@ -285,6 +290,44 @@ public class AsyncAPIExample {
                 System.out.println( "Text:  not ok: " + fqdn + ": server reports " + ((DNSServerException) _result.cause()).responseCode );
             else
                 System.out.println( "Text:  not ok: " + fqdn + ": " + _result.msg() );
+        }
+    }
+
+
+    // use the given API to resolve and print out all the resource records of the given FQDNs...
+    private static void resolve( final DNSResolverAPI _api, final String... _fqdn ) {
+
+        Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
+
+            Outcome<?> reco = _api.resolve( new HandleRecords( fqdn )::handler, fqdn, DNSRRType.ANY );
+
+            if( reco.ok() )
+                System.out.println( "Query initiated for " + fqdn + " resource records" );
+            else
+                System.out.println( "Problem initiating query for " + fqdn + " resource records" );
+        } );
+    }
+
+
+    private static class HandleRecords {
+
+        private final String fqdn;
+
+        private HandleRecords( final String _fqdn ) {
+            fqdn = _fqdn;
+        }
+
+        private void handler( final Outcome<List<DNSResourceRecord>> _result ) {
+            if( _result.ok() )
+                if( _result.info().size() > 0 )
+                    _result.info().forEach( (rr) -> System.out.println( "Resource record:      ok: " + fqdn + " has: " + rr.toString() ) );
+                else
+                    System.out.println( "Resource record:      ok: " + fqdn + " has no resource records" );
+            else
+            if( _result.cause() instanceof DNSServerException )
+                System.out.println( "Resource record:  not ok: " + fqdn + ": server reports " + ((DNSServerException) _result.cause()).responseCode );
+            else
+                System.out.println( "Resource record:  not ok: " + fqdn + ": " + _result.msg() );
         }
     }
 }
