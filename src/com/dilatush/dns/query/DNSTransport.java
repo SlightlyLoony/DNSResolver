@@ -1,4 +1,4 @@
-package com.dilatush.dns.agent;
+package com.dilatush.dns.query;
 
 public enum DNSTransport {
     TCP, UDP;

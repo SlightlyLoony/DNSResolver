@@ -7,13 +7,13 @@ import static com.dilatush.dns.DNSServerSelectionStrategy.*;
 public class DNSServerSelection {
 
     public final DNSServerSelectionStrategy strategy;
-    public final String agentName;
+    public final String serverName;
 
 
-    private DNSServerSelection( final DNSServerSelectionStrategy _strategy, final String _agentName ) {
+    private DNSServerSelection( final DNSServerSelectionStrategy _strategy, final String _serverName ) {
 
         strategy = _strategy;
-        agentName = _agentName;
+        serverName = _serverName;
     }
 
 
@@ -37,9 +37,9 @@ public class DNSServerSelection {
     }
 
 
-    public static DNSServerSelection named( final String _agentName ) {
+    public static DNSServerSelection named( final String _serverName ) {
 
-        Checks.notEmpty( _agentName );
-        return new DNSServerSelection( RANDOM, _agentName );
+        Checks.notEmpty( _serverName );
+        return new DNSServerSelection( RANDOM, _serverName );
     }
 }

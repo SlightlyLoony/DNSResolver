@@ -5,7 +5,7 @@ package com.dilatush.dns;
 // TODO: Comments and Javadocs...
 
 
-import com.dilatush.dns.agent.*;
+import com.dilatush.dns.query.*;
 import com.dilatush.dns.cache.DNSCache;
 import com.dilatush.dns.message.DNSMessage;
 import com.dilatush.dns.message.DNSOpCode;
@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static com.dilatush.dns.IPVersion.*;
-import static com.dilatush.dns.agent.DNSQuery.QueryResult;
+import static com.dilatush.dns.query.DNSQuery.QueryResult;
 import static com.dilatush.dns.message.DNSRRType.*;
 
 // TODO: fix terminology
@@ -63,10 +63,10 @@ public class DNSResolver {
     private final ExecutorService               executor;
     private final DNSNIO                        nio;
     private final IPVersion                     ipVersion;
-    private final List<AgentParams>             agentParams;
-    private final Map<String,AgentParams>       agentsByName;
-    private final List<AgentParams>             agentsByPriority;
-    private final List<AgentParams>             agentsBySpeed;
+    private final List<ServerSpec>             serverSpecs;
+    private final Map<String,ServerSpec>       serversByName;
+    private final List<ServerSpec>             serversByPriority;
+    private final List<ServerSpec>             serversBySpeed;
     private final Map<Short,DNSQuery>           activeQueries;
     private final AtomicInteger                 nextQueryID;
     private final DNSCache                      cache;
@@ -76,36 +76,36 @@ public class DNSResolver {
      * Creates a new instance of this class with the given parameters.
      *
      * @param _executor Specifies the executor that will be used to decode and process messages received from DNS servers.
-     * @param _agentParams Specifies the parameters for recursive DNS server agents that may be used by this resolver.
+     * @param _serverSpecs Specifies the parameters for recursive DNS server agents that may be used by this resolver.
      * @param _maxCacheSize Specifies the maximum DNS resource record cache size.
      * @param _maxAllowableTTLMillis Specifies the maximum allowable TTL (in milliseconds) for a resource record in the cache.
      * @throws DNSResolverException if there is a problem instantiating {@link DNSNIO}.
      */
-    private DNSResolver( final ExecutorService _executor, final IPVersion _ipVersion, final List<AgentParams> _agentParams,
+    private DNSResolver( final ExecutorService _executor, final IPVersion _ipVersion, final List<ServerSpec> _serverSpecs,
                          final int _maxCacheSize, final long _maxAllowableTTLMillis ) throws DNSResolverException {
 
         executor      = _executor;
         nio           = new DNSNIO();
         ipVersion     = _ipVersion;
-        agentParams   = _agentParams;
+        serverSpecs   = _serverSpecs;
         activeQueries = new ConcurrentHashMap<>();
         nextQueryID   = new AtomicInteger();
         cache         = new DNSCache( _maxCacheSize, _maxAllowableTTLMillis );
 
         // map our agent parameters by name...
-        Map<String,AgentParams> byName = new HashMap<>();
-        agentParams.forEach( ap -> byName.put( ap.name, ap ) );
-        agentsByName = Collections.unmodifiableMap( byName );
+        Map<String,ServerSpec> byName = new HashMap<>();
+        serverSpecs.forEach( ap -> byName.put( ap.name, ap ) );
+        serversByName = Collections.unmodifiableMap( byName );
 
         // make a list of agents sorted in descending order of priority (so the highest priority agents are first)...
-        List<AgentParams> temp = new ArrayList<>( agentParams );
+        List<ServerSpec> temp = new ArrayList<>( serverSpecs );
         temp.sort( (a,b) -> b.priority - a.priority );
-        agentsByPriority = Collections.unmodifiableList( temp );
+        serversByPriority = Collections.unmodifiableList( temp );
 
         // make a list of agents sorted in ascending order of timeout (so the fastest agents are first)...
-        temp = new ArrayList<>( agentParams );
+        temp = new ArrayList<>( serverSpecs );
         temp.sort( Comparator.comparingLong( a -> a.timeoutMillis ) );
-        agentsBySpeed = Collections.unmodifiableList( temp );
+        serversBySpeed = Collections.unmodifiableList( temp );
     }
 
 
@@ -120,9 +120,9 @@ public class DNSResolver {
         if( resolveFromCache( _question, _handler ) )
             return outcome.ok();
 
-        List<AgentParams> agents = getAgents( _serverSelection );
+        List<ServerSpec> servers = getServers( _serverSelection );
 
-        DNSQuery query = new DNSForwardedQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), agents, _handler );
+        DNSQuery query = new DNSForwardedQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), serverSpecs, _handler );
 
         return query.initiate( _initialTransport );
     }
@@ -246,21 +246,21 @@ public class DNSResolver {
      * @param _serverSelection
      * @return
      */
-    private List<AgentParams> getAgents( final DNSServerSelection _serverSelection ) {
+    private List<ServerSpec> getServers( final DNSServerSelection _serverSelection ) {
 
         return switch( _serverSelection.strategy ) {
 
-            case PRIORITY    -> new ArrayList<>( agentsByPriority );
-            case SPEED       -> new ArrayList<>( agentsBySpeed );
-            case ROUND_ROBIN -> new ArrayList<>( agentParams );
+            case PRIORITY    -> new ArrayList<>( serversByPriority );
+            case SPEED       -> new ArrayList<>( serversBySpeed );
+            case ROUND_ROBIN -> new ArrayList<>( serverSpecs );
             case RANDOM      -> {
-                ArrayList<AgentParams> result = new ArrayList<>( agentParams );
+                ArrayList<ServerSpec> result = new ArrayList<>( serverSpecs );
                 Collections.shuffle( result );
                 yield result;
             }
             case NAMED       -> {
-                AgentParams ap = agentsByName.get( _serverSelection.agentName );
-                ArrayList<AgentParams> result = new ArrayList<>( 1 );
+                ServerSpec ap = serversByName.get( _serverSelection.serverName );
+                ArrayList<ServerSpec> result = new ArrayList<>( 1 );
                 if( ap != null ) result.add( ap );
                 yield result;
             }
@@ -274,7 +274,7 @@ public class DNSResolver {
      * @return {@code true} if this resolver has been configured with one or more DNS servers that it can forward to.
      */
     public boolean hasServers() {
-        return agentParams.size() > 0;
+        return serverSpecs.size() > 0;
     }
 
 
@@ -314,7 +314,7 @@ public class DNSResolver {
 
 
         private       ExecutorService      executor;
-        private final List<AgentParams>    agentParams           = new ArrayList<>();
+        private final List<ServerSpec>    serverSpecs           = new ArrayList<>();
         private       IPVersion            ipVersion             = IPv4;
         private       int                  maxCacheSize          = 1000;
         private       long                 maxAllowableTTLMillis = 2 * 3600 * 1000;  // two hours...
@@ -334,7 +334,7 @@ public class DNSResolver {
 
             // try to construct the new instance (it might fail if there's a problem starting up NIO)...
             try {
-                return outcomeResolver.ok( new DNSResolver( executor, ipVersion, agentParams, maxCacheSize, maxAllowableTTLMillis ) );
+                return outcomeResolver.ok( new DNSResolver( executor, ipVersion, serverSpecs, maxCacheSize, maxAllowableTTLMillis ) );
             }
             catch( DNSResolverException _e ) {
                 return outcomeResolver.notOk( "Problem creating DNSResolver", _e );
@@ -398,7 +398,7 @@ public class DNSResolver {
 
             Checks.required( _serverAddress, _name );
 
-            agentParams.add( new AgentParams( _timeoutMillis, _priority, _name, _serverAddress ) );
+            serverSpecs.add( new ServerSpec( _timeoutMillis, _priority, _name, _serverAddress ) );
         }
     }
 
@@ -406,5 +406,5 @@ public class DNSResolver {
     /**
      * A simple record to hold the parameters required to construct a {@link DNSServerAgent} instance.
      */
-    public record AgentParams( long timeoutMillis, int priority, String name, InetSocketAddress serverAddress ){}
+    public record ServerSpec( long timeoutMillis, int priority, String name, InetSocketAddress serverAddress ){}
 }

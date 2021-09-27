@@ -1,6 +1,6 @@
 package com.dilatush.dns;
 
-import com.dilatush.dns.agent.DNSTransport;
+import com.dilatush.dns.query.DNSTransport;
 import com.dilatush.dns.message.DNSQuestion;
 import com.dilatush.dns.message.DNSRRType;
 import com.dilatush.dns.rr.DNSResourceRecord;
@@ -20,8 +20,8 @@ import java.util.function.Function;
 import java.util.logging.Logger;
 
 import static com.dilatush.dns.DNSUtil.*;
-import static com.dilatush.dns.agent.DNSQuery.QueryResult;
-import static com.dilatush.dns.agent.DNSTransport.UDP;
+import static com.dilatush.dns.query.DNSQuery.QueryResult;
+import static com.dilatush.dns.query.DNSTransport.UDP;
 
 /**
  * <p>Instances of this class wrap an instance of {@link DNSResolver} to provide a simpler and more convenient API than is provided by the {@link DNSResolver} itself.</p>

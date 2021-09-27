@@ -1,7 +1,7 @@
-package com.dilatush.dns.agent;
+package com.dilatush.dns.query;
 
 import com.dilatush.dns.DNSResolver;
-import com.dilatush.dns.DNSResolver.AgentParams;
+import com.dilatush.dns.DNSResolver.ServerSpec;
 import com.dilatush.dns.DNSServerException;
 import com.dilatush.dns.cache.DNSCache;
 import com.dilatush.dns.message.DNSMessage;
@@ -23,37 +23,35 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static com.dilatush.dns.agent.DNSTransport.TCP;
-import static com.dilatush.dns.agent.DNSTransport.UDP;
+import static com.dilatush.dns.query.DNSTransport.TCP;
+import static com.dilatush.dns.query.DNSTransport.UDP;
 
 /**
  * Abstract base class for query implementations.
  */
 public abstract class DNSQuery {
 
-    private static final Logger LOGGER                           = General.getLogger();
+    protected static final Outcome.Forge<QueryResult>      queryOutcome      = new Outcome.Forge<>();
+    protected static final Outcome.Forge<?>                outcome           = new Outcome.Forge<>();
+    private   static final Logger                          LOGGER            = General.getLogger();
 
-    protected static final Outcome.Forge<QueryResult> queryOutcome = new Outcome.Forge<>();
-    protected static final Outcome.Forge<?>           outcome      = new Outcome.Forge<>();
+    protected        final DNSResolver                     resolver;            // the resolver that owns this query...
+    protected        final DNSCache                        cache;               // the resolver's cache...
+    protected        final DNSNIO                          nio;                 // the resolver's network I/O implementation...
+    protected        final ExecutorService                 executor;            // the resolver's executor service...
+    protected        final Map<Short,DNSQuery>             activeQueries;       // the resolver's map of active queries (to ensure a reference to active queries)...
+    protected        final int                             id;                  // the ID for this query...
+    protected        final DNSQuestion                     question;            // the question being answered by this query...
+    protected        final Consumer<Outcome<QueryResult>>  handler;             // the client's handler for this query's results...
+    protected        final List<ServerSpec>                serverSpecs;         // the specs for the DNS servers available to respond to this query...
+    protected        final QueryLog                        queryLog;            // the query log for this query (and any sub-queries)...
 
+    protected              DNSServerAgent                  agent;
+    protected              DNSTransport                    transport;
+    protected              DNSTransport                    initialTransport;
 
-    protected final DNSResolver                     resolver;
-    protected final DNSCache                        cache;
-    protected final DNSNIO                          nio;
-    protected final ExecutorService                 executor;
-    protected final Map<Short,DNSQuery>             activeQueries;
-    protected final int                             id;
-    protected final DNSQuestion                     question;
-    protected final Consumer<Outcome<QueryResult>>  handler;
-    protected final List<AgentParams>               agents;
-    protected final QueryLog                        queryLog;
-
-    protected       DNSServerAgent                  agent;
-    protected       DNSTransport                    transport;
-    protected       DNSTransport                    initialTransport;
-
-    protected       DNSMessage                      queryMessage;
-    protected       DNSMessage                      responseMessage;
+    protected              DNSMessage                      queryMessage;
+    protected              DNSMessage                      responseMessage;
 
 
     /**
@@ -71,14 +69,14 @@ public abstract class DNSQuery {
      * @param _id The unique identifying 32-bit integer for this query.  The DNS specifications call for this ID to help the resolver match incoming responses to the query that
      *            produced them.  In this implementation, the matching is done by the fact that each query has a unique port number associated with it, so the ID isn't needed at
      *            all for matching.  Nevertheless, it has an important purpose: it is the key for the active query map described above.
-     * @param _agents The {@link List List&lt;AgentParams&gt;} of the parameters used to create {@link DNSServerAgent} instances that can query other DNS servers.  Note that for
-     *                forwarded queries this list is supplied by the resolver, but for recursive queries it is generated in the course of making the queries.
+     * @param _serverSpecs The {@link List List&lt;ServerSpec&gt;} of the parameters used to create {@link DNSServerAgent} instances that can query other DNS servers.  Note that
+     *                     for forwarded queries this list is supplied by the resolver, but for recursive queries it is generated in the course of making the queries.
      * @param _handler The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler that will be called when the query is completed.  Note that the handler is called
      *                 either for success or failure.
      */
     protected DNSQuery( final DNSResolver _resolver, final DNSCache _cache, final DNSNIO _nio, final ExecutorService _executor,
                         final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
-                        final List<AgentParams> _agents, final Consumer<Outcome<QueryResult>> _handler ) {
+                        final List<ServerSpec> _serverSpecs, final Consumer<Outcome<QueryResult>> _handler ) {
 
         Checks.required( _resolver, _cache, _nio, _executor, _activeQueries, _question, _handler );
 
@@ -89,7 +87,7 @@ public abstract class DNSQuery {
         activeQueries   = _activeQueries;
         question        = _question;
         id              = _id;
-        agents          = _agents;
+        serverSpecs = _serverSpecs;
         handler         = (new LoggingHandlerWrapper( _handler ))::handler;
         queryLog        = new QueryLog();
         
@@ -111,25 +109,21 @@ public abstract class DNSQuery {
 
 
     /**
-     * Add the IP addresses contained in any A or AAAA records in the given list of DNS resource records to the given list of IP addresses.
+     * Send the query to the DNS server, returning an {@link Outcome Outcome&lt;?&gt;} with the result.  Generally the outcome will be "not ok" only if there is some problem
+     * with the network or connection to a specific DNS server.
      *
-     * @param _ips The list of IP addresses to append to.
-     * @param _rrs The list of DNS resource records to get IP addresses from.
+     * @return The {@link Outcome Outcome&lt;?&gt;} result.
      */
-    protected void addIPs( final List<InetAddress> _ips, final List<DNSResourceRecord> _rrs ) {
-        _rrs.forEach( (rr) -> {
-            if( resolver.useIPv4() && (rr instanceof A) )
-                _ips.add( ((A)rr).address );
-            else if( resolver.useIPv6() && (rr instanceof AAAA) )
-                _ips.add( ((AAAA)rr).address );
-        } );
-    }
-
-
     protected abstract Outcome<?> query();
 
-    protected abstract void handleOK();
 
+    /**
+     * Called by this query's {@link DNSServerAgent} upon receipt of a message from a DNS server; it should never be called from anywhere else.  This method is executed in an
+     * {@code executor} thread.
+     *
+     * @param _responseMsg The {@link DNSMessage} received from a DNS server.
+     * @param _transport The transport (UDP or TCP) that the message was received on.
+     */
     protected void handleResponse( final DNSMessage _responseMsg, final DNSTransport _transport ) {
 
         queryLog.log("Received response via " + _transport );
@@ -167,7 +161,11 @@ public abstract class DNSQuery {
     }
 
 
-    protected void basicOK() {
+    /**
+     * Called when the response message has an "OK" response code.  Subclasses should override this method to implement their specific needs, but should call this method
+     * as their first action.
+     */
+    protected void handleOK() {
 
         String logMsg = "Response was ok: "
                 + responseMessage.answers.size() + " answers, "
@@ -177,8 +175,8 @@ public abstract class DNSQuery {
         queryLog.log( logMsg );
 
         // add our results to the cache...
-        cache.add( responseMessage.answers );
-        cache.add( responseMessage.authorities );
+        cache.add( responseMessage.answers           );
+        cache.add( responseMessage.authorities       );
         cache.add( responseMessage.additionalRecords );
     }
 
@@ -205,7 +203,7 @@ public abstract class DNSQuery {
         }
 
         // otherwise, if we have more servers to try, fire off queries until one of them works or we run out of servers to try...
-        else while( !agents.isEmpty() ) {
+        else while( !serverSpecs.isEmpty() ) {
 
             queryLog.log( "Response was " + _responseCode + "; trying another DNS server" );
             Outcome<?> qo = query();
@@ -227,7 +225,7 @@ public abstract class DNSQuery {
 
     protected void handleProblem( final String _msg, final Throwable _cause ) {
         queryLog.log( _msg + ((_cause != null) ? " - " + _cause.getMessage() : "") );
-        while( !agents.isEmpty() ) {
+        while( !serverSpecs.isEmpty() ) {
             Outcome<?> qo = query();
             if( qo.ok() )
                 return;
@@ -235,6 +233,22 @@ public abstract class DNSQuery {
         queryLog.log("No more DNS servers to try" );
         handler.accept( queryOutcome.notOk( _msg, _cause, new QueryResult( queryMessage, null, queryLog ) ) );
         activeQueries.remove( (short) id );
+    }
+
+
+    /**
+     * Add the IP addresses contained in any A or AAAA records in the given list of DNS resource records to the given list of IP addresses.
+     *
+     * @param _ips The list of IP addresses to append to.
+     * @param _rrs The list of DNS resource records to get IP addresses from.
+     */
+    protected void addIPs( final List<InetAddress> _ips, final List<DNSResourceRecord> _rrs ) {
+        _rrs.forEach( (rr) -> {
+            if( resolver.useIPv4() && (rr instanceof A) )
+                _ips.add( ((A)rr).address );
+            else if( resolver.useIPv6() && (rr instanceof AAAA) )
+                _ips.add( ((AAAA)rr).address );
+        } );
     }
 
 

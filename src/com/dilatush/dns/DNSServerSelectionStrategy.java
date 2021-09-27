@@ -1,6 +1,6 @@
 package com.dilatush.dns;
 
-import com.dilatush.dns.agent.DNSServerAgent;
+import com.dilatush.dns.query.DNSServerAgent;
 
 /**
  * Enumerates the possible strategies for a query to use when selecting a {@link DNSServerAgent} to resolve the query through.  The {@link #PRIORITY}, {@link #SPEED},

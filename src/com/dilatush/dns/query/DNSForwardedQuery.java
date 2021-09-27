@@ -1,11 +1,11 @@
-package com.dilatush.dns.agent;
+package com.dilatush.dns.query;
 
 import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
 import com.dilatush.dns.DNSResolver;
-import com.dilatush.dns.DNSResolver.AgentParams;
+import com.dilatush.dns.DNSResolver.ServerSpec;
 import com.dilatush.dns.cache.DNSCache;
 import com.dilatush.dns.message.DNSMessage;
 import com.dilatush.dns.message.DNSOpCode;
@@ -38,14 +38,14 @@ public class DNSForwardedQuery extends DNSQuery {
      * @param _id The unique identifying 32-bit integer for this query.  The DNS specifications call for this ID to help the resolver match incoming responses to the query that
      *            produced them.  In this implementation, the matching is done by the fact that each query has a unique port number associated with it, so the ID isn't needed at
      *            all for matching.  Nevertheless, it has an important purpose: it is the key for the active query map described above.
-     * @param _agents The {@link List List&lt;AgentParams&gt;} of the parameters used to create {@link DNSServerAgent} instances that can query other DNS servers.  Note that for
+     * @param _agents The {@link List List&lt;ServerSpec&gt;} of the parameters used to create {@link DNSServerAgent} instances that can query other DNS servers.  Note that for
      *                forwarded queries this list is supplied by the resolver, but for recursive queries it is generated in the course of making the queries.
      * @param _handler The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler that will be called when the query is completed.  Note that the handler is called
      *                 either for success or failure.
      */
     public DNSForwardedQuery( final DNSResolver _resolver, final DNSCache _cache, final DNSNIO _nio, final ExecutorService _executor,
                               final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
-                              final List<AgentParams> _agents, final Consumer<Outcome<QueryResult>> _handler ) {
+                              final List<ServerSpec> _agents, final Consumer<Outcome<QueryResult>> _handler ) {
         super( _resolver, _cache, _nio, _executor, _activeQueries, _question, _id, _agents, _handler );
 
         Checks.required( _agents );
@@ -56,8 +56,7 @@ public class DNSForwardedQuery extends DNSQuery {
 
     /**
      * Initiates a query using the given transport (UDP or TCP).  Note that a call to this method may result in several messages to DNS servers and several responses from them.
-     * This may happen if a queried DNS server doesn't respond within the timeout time, or if a series of DNS servers must be queried to get the answer to the question this
-     * query is trying to resolve.
+     * This may happen if a queried DNS server doesn't respond within the timeout time, or if the DNS server reports errors.
      *
      * @param _initialTransport The initial transport (UDP or TCP) to use when resolving this query.
      * @return The {@link Outcome Outcome&lt;?&gt;} of this operation.
@@ -72,7 +71,7 @@ public class DNSForwardedQuery extends DNSQuery {
         initialTransport = _initialTransport;
 
         // if we have no agents, then revert to a recursive query...
-        if( agents.isEmpty() ) {
+        if( serverSpecs.isEmpty() ) {
             DNSQuery itQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, question, id, handler );
             return itQuery.initiate( _initialTransport );
         }
@@ -81,12 +80,18 @@ public class DNSForwardedQuery extends DNSQuery {
     }
 
 
+    /**
+     * Send the query to the DNS server, returning an {@link Outcome Outcome&lt;?&gt;} with the result.  Generally the outcome will be "not ok" only if there is some problem
+     * with the network or connection to a specific DNS server.
+     *
+     * @return The {@link Outcome Outcome&lt;?&gt;} result.
+     */
     protected Outcome<?> query() {
 
         transport = initialTransport;
 
         // figure out what agent we're going to use...
-        agent = new DNSServerAgent( resolver, this, nio, executor, agents.remove( 0 ) );
+        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
         LOGGER.finer( "forwarded query - ID: " + id + ", " + question.toString() + ", using " + agent.name );
 
         DNSMessage.Builder builder = new DNSMessage.Builder();
@@ -107,9 +112,12 @@ public class DNSForwardedQuery extends DNSQuery {
     }
 
 
+    /**
+     * Called when the response message has an "OK" response code.  Adds the results (answers, authorities, and additional records) to the cache, then sends an "ok" outcome with
+     * the response message to the client's handler.
+     */
     protected void handleOK() {
-
-        basicOK();
+        super.handleOK();
 
         // send the results, and then we're done...
         handler.accept( queryOutcome.ok( new QueryResult( queryMessage, responseMessage, queryLog )) );

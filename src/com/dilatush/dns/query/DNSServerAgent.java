@@ -1,4 +1,4 @@
-package com.dilatush.dns.agent;
+package com.dilatush.dns.query;
 
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.message.DNSMessage;
@@ -48,7 +48,7 @@ public class DNSServerAgent {
     public           final String                        name;
 
 
-    public DNSServerAgent( final DNSResolver _resolver, final DNSQuery _query, final DNSNIO _nio, final ExecutorService _executor, final DNSResolver.AgentParams _params ) {
+    public DNSServerAgent( final DNSResolver _resolver, final DNSQuery _query, final DNSNIO _nio, final ExecutorService _executor, final DNSResolver.ServerSpec _params ) {
         this( _resolver, _query, _nio, _executor, _params.timeoutMillis(), _params.priority(), _params.name(), _params.serverAddress() );
     }
 

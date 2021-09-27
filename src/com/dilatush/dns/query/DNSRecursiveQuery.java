@@ -1,7 +1,6 @@
-package com.dilatush.dns.agent;
+package com.dilatush.dns.query;
 
 import com.dilatush.dns.DNSResolver;
-import com.dilatush.dns.DNSResolver.AgentParams;
 import com.dilatush.dns.DNSResolverError;
 import com.dilatush.dns.DNSResolverException;
 import com.dilatush.dns.cache.DNSCache;
@@ -20,27 +19,44 @@ import java.util.function.Consumer;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
-import static com.dilatush.dns.agent.DNSTransport.UDP;
+import static com.dilatush.dns.query.DNSTransport.UDP;
 import static java.util.logging.Level.FINER;
 import static java.util.logging.Level.FINEST;
 
 /**
- * Instances of this class contain the elements and state of a DNS query, and provide methods that implement the resolution of that query.
+ * Instances of this class contain the elements and state of a recursive DNS query, and provide methods that implement the resolution of that query.
  */
 public class DNSRecursiveQuery extends DNSQuery {
 
     private static final Logger LOGGER                           = General.getLogger();
-    private static final long RECURSIVE_NAME_SERVER_TIMEOUT_MS = 5000;
+    private static final long   RECURSIVE_NAME_SERVER_TIMEOUT_MS = 5000;
     private static final int    DNS_SERVER_PORT                  = 53;
 
     private static final Outcome.Forge<QueryResult> queryOutcome = new Outcome.Forge<>();
 
 
-    private final List<InetAddress>       nextIPs;
-    private final AtomicInteger           subQueries;
-    private final List<DNSResourceRecord> answers;
+    private final List<InetAddress>       nextIPs;     // IP addresses of the next name servers to query...
+    private final AtomicInteger           subQueries;  // the number of sub-queries currently running...
+    private final List<DNSResourceRecord> answers;     // the answers to this query...
 
 
+    /**
+     * Create a new instance of this class with the given parameters.
+     *
+     * @param _resolver The {@link DNSResolver} responsible for creating this query.  This reference provides the query access to some of the resolver's methods and fields.
+     * @param _cache The {@link DNSCache} owned by the resolver  This reference provides access for the query to use cached resource records to resolve the query (fully or
+     *               partially), and to add new resource records received from other DNS servers.
+     * @param _nio The {@link DNSNIO} to use for all network I/O.  This reference can be passed along to the {@link DNSServerAgent}s that need it.
+     * @param _executor The {@link ExecutorService} to be used for processing received messages, to keep the load on the NIO thread to a minimum.
+     * @param _activeQueries The {@link DNSResolver}'s map of currently active queries.  This reference allows the query to update the map.  The map has a peculiar purpose: to
+     *                       keep a reference to any active queries, as the resolver otherwise keeps none.
+     * @param _question The {@link DNSQuestion} to be resolved by this query.
+     * @param _id The unique identifying 32-bit integer for this query.  The DNS specifications call for this ID to help the resolver match incoming responses to the query that
+     *            produced them.  In this implementation, the matching is done by the fact that each query has a unique port number associated with it, so the ID isn't needed at
+     *            all for matching.  Nevertheless, it has an important purpose: it is the key for the active query map described above.
+     * @param _handler The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler that will be called when the query is completed.  Note that the handler is called
+     *                 either for success or failure.
+     */
     public DNSRecursiveQuery( final DNSResolver _resolver, final DNSCache _cache, final DNSNIO _nio, final ExecutorService _executor,
                               final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
                               final Consumer<Outcome<QueryResult>> _handler ) {
@@ -54,6 +70,14 @@ public class DNSRecursiveQuery extends DNSQuery {
     }
 
 
+    /**
+     * Initiates a query using the given transport (UDP or TCP).  Note that a call to this method may result in several messages to DNS servers and several responses from them.
+     * This may happen in the natural course of recursive resolution, if a CNAME chain needs to be resolved, if a queried DNS server doesn't respond within the timeout time, or
+     * if the DNS server reports errors.
+     *
+     * @param _initialTransport The initial transport (UDP or TCP) to use when resolving this query.
+     * @return The {@link Outcome Outcome&lt;?&gt;} of this operation.
+     */
     public Outcome<?> initiate( final DNSTransport _initialTransport ) {
 
         Checks.required( _initialTransport, "initialTransport");
@@ -125,18 +149,24 @@ public class DNSRecursiveQuery extends DNSQuery {
         }
 
         // turn our IP addresses into agent parameters...
-        nsIPs.forEach( (ip) -> agents.add( new AgentParams( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
+        nsIPs.forEach( (ip) -> serverSpecs.add( new DNSResolver.ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
 
         return query();
     }
 
 
+    /**
+     * Send the query to the DNS server, returning an {@link Outcome Outcome&lt;?&gt;} with the result.  Generally the outcome will be "not ok" only if there is some problem
+     * with the network or connection to a specific DNS server.
+     *
+     * @return The {@link Outcome Outcome&lt;?&gt;} result.
+     */
     protected Outcome<?> query() {
 
         transport = initialTransport;
 
         // figure out what agent we're going to use...
-        agent = new DNSServerAgent( resolver, this, nio, executor, agents.remove( 0 ) );
+        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
 
         LOGGER.finer( "Recursive query - ID: " + id + ", " + question.toString() + ", using " + agent.name );
 
@@ -158,9 +188,12 @@ public class DNSRecursiveQuery extends DNSQuery {
    }
 
 
+    /**
+     * Called when the response message has an "OK" response code.  Adds the results (answers, authorities, and additional records) to the cache, then handles the rather
+     * complicated logic that implements recursive querying.
+     */
     protected void handleOK() {
-
-        basicOK();
+        super.handleOK();
 
         // if we have some answers (or we have none, but the response was authoritative), then let's see if we're done, or if we're resolving a CNAME chain...
         if( !responseMessage.answers.isEmpty() || responseMessage.authoritativeAnswer ) {
@@ -462,11 +495,11 @@ public class DNSRecursiveQuery extends DNSQuery {
         }
 
         // turn our IP addresses into agent parameters...
-        agents.clear();
-        nextIPs.forEach( (ip) -> agents.add( new AgentParams( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
+        serverSpecs.clear();
+        nextIPs.forEach( (ip) -> serverSpecs.add( new DNSResolver.ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
 
         // figure out what agent we're going to use...
-        agent = new DNSServerAgent( resolver, this, nio, executor, agents.remove( 0 ) );
+        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
 
         String logMsg = "Subsequent recursive query: " + question.toString() + ", using " + agent.name;
         LOGGER.finer( logMsg );
