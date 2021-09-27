@@ -72,7 +72,7 @@ public abstract class DNSQuery {
      *            produced them.  In this implementation, the matching is done by the fact that each query has a unique port number associated with it, so the ID isn't needed at
      *            all for matching.  Nevertheless, it has an important purpose: it is the key for the active query map described above.
      * @param _agents The {@link List List&lt;AgentParams&gt;} of the parameters used to create {@link DNSServerAgent} instances that can query other DNS servers.  Note that for
-     *                recursive queries this list is supplied by the resolver, but for iterative queries it is generated in the course of making the queries.
+     *                forwarded queries this list is supplied by the resolver, but for recursive queries it is generated in the course of making the queries.
      * @param _handler The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler that will be called when the query is completed.  Note that the handler is called
      *                 either for success or failure.
      */

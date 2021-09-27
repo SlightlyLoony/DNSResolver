@@ -2,7 +2,6 @@ package com.dilatush.dns;
 
 // TODO: Handle responses with no answers (see RFC 2308)
 // TODO: Get rid of protected everywhere
-// TODO: Change terminology from "recursive" and "iterative" to "forwarding" and "recursive"
 // TODO: Comments and Javadocs...
 
 
@@ -28,24 +27,29 @@ import static com.dilatush.dns.IPVersion.*;
 import static com.dilatush.dns.agent.DNSQuery.QueryResult;
 import static com.dilatush.dns.message.DNSRRType.*;
 
-
+// TODO: fix terminology
 /**
  * <p>Instances of this class implement a DNS "resolver".  Given a fully-qualified domain name (FQDN), a resolver uses name servers on the Internet to discover information about
  * that FQDN.  Most commonly the information sought is the IP address (v4 or v6) of the host with that FQDN, but there are other uses as well.  For instance, given the FQDN
  * "cnn.com", a resolver can discover the FQDNs of mail exchangers (servers) for that domain, or the name servers that are authoritative for that domain.</p>
- * <p>DNS resolvers can operate in one or both of two quite different modes: by querying a recursive name server (recursive mode) or by doing all the work itself (iterative mode).
- * Most programmers are familiar with recursive mode, as it's how most DNS resolvers on clients or servers work.  Generally the host has a DNS resolver built into the operating
+ * <p>DNS resolvers can operate in one or both of two quite different modes: by forwarding a query to a recursive name server (forwarded mode) or by doing all the work itself
+ * (recursive mode).
+ * Most programmers are familiar with forwarded mode, as it's how most DNS resolvers on clients or servers work.  Generally the host has a DNS resolver built into the operating
  * system, and this resolver knows the IP addresses of one or more recursive name servers (such as Google's DNS service, OpenDNS, the ISP's DNS server, etc.).  In this most
- * common case, the host's DNS resolver is simply delegating the work to the recursive name server.  A DNS resolver operating in iterative mode does something much more complex,
+ * common case, the host's DNS resolver is simply delegating the work to the recursive name server.  A DNS resolver operating in recursive mode does something much more complex,
  * and best illustrated with an example.  Suppose, for instance, that we want to resolve the IPv4 address for "www.bogus.com".  Here are the steps a DNS resolver operating in
- * iterative mode would go through:</p>
+ * recursive mode would go through:</p>
  * <ol>
  *     <li>Read the "root hints" file.  This has a list of the domain names and IP addresses for the root name servers.</li>
- *     <li>Query a root name server for "www.bogus.com".  It answers with the domain names and IP addresses for authoritative name servers for "com".</li>
- *     <li>Query a "com" name server for "www.bogus.com".  It answers with the domain names and IP addresses for authoritative name servers for "bogus.com"</li>
+ *     <li>Query a root name server for "www.bogus.com".  It answers with the domain names (and perhaps IP addresses) for authoritative name servers for "com".  If the
+ *     IP addresses were not supplied, query for them in a separate query.</li>
+ *     <li>Query a "com" name server for "www.bogus.com".  It answers with the domain names (and perhaps IP addresses) for authoritative name servers for "bogus.com".  If
+ *     the IP addresses were not supplied, query for them in a separate query.</li>
  *     <li>Query a "bogus.com" name server for "www.bogus.com".  It answers with the IPv4 address for "www.bogus.com".</li>
  * </ol>
- * <p>Instances of this class can operate in either recursive mode or iterative mode; this option is selected for each query mode.</p>
+ * <p>Note that this process can result in dozens of DNS servers on the Internet being queried for information in order to answer a <i>single</i> query made to the resolver.
+ * This overhead is greatly reduced by using a cache (see below).</p>
+ * <p>Instances of this class can operate in either forwarding mode or recursive mode; this option is selected for each query made.</p>
  * <p>Instances of this class include an optional cache of the results of DNS queries, which can greatly increase the resolver's performance when multiple queries to the same
  * domain are made.  This is a very common occurrence in almost any application, so using the cache is highly recommended.</p>
  */
@@ -238,9 +242,6 @@ public class DNSResolver {
 
 
     /**
-     * Returns a mutable list of {@link AgentParams} ordered according to the given {@link DNSServerSelectionStrategy}.  In the case of the {@code NAMED} strategy, the list will
-     * have a single element, corresponding to the agent with the given name.  If the name is not found, the list will be empty.  In the case of the {@code ITERATIVE} strategy,
-     * this method returns an empty list.
      *
      * @param _serverSelection
      * @return

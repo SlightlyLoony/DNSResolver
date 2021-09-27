@@ -298,7 +298,7 @@ public class DNSRootHints {
         }
         LOGGER.finest( "Problem downloading root hints file: " + ufo.msg() );
 
-        // if we get here, there's something seriously wrong - we have no valid root hints, so iterative resolution is going to fail...
+        // if we get here, there's something seriously wrong - we have no valid root hints, so recursive resolution is going to fail...
         return rrlOutcome.notOk( "Cannot read valid root hints", new DNSResolverException( "Cannot read valid root hints", DNSResolverError.ROOT_HINTS_PROBLEMS ) );
     }
 

@@ -30,7 +30,7 @@ import static java.util.logging.Level.FINEST;
 public class DNSRecursiveQuery extends DNSQuery {
 
     private static final Logger LOGGER                           = General.getLogger();
-    private static final long   ITERATIVE_NAME_SERVER_TIMEOUT_MS = 5000;
+    private static final long RECURSIVE_NAME_SERVER_TIMEOUT_MS = 5000;
     private static final int    DNS_SERVER_PORT                  = 53;
 
     private static final Outcome.Forge<QueryResult> queryOutcome = new Outcome.Forge<>();
@@ -50,7 +50,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         subQueries = new AtomicInteger();
         answers    = new ArrayList<>();
 
-        queryLog.log("New iterative query " + question );
+        queryLog.log("New recursive query " + question );
     }
 
 
@@ -59,7 +59,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         Checks.required( _initialTransport, "initialTransport");
 
         queryLog.log("Initial query" );
-        LOGGER.finer( "Initiating new iterative query - ID: " + id + ", " + question.toString() );
+        LOGGER.finer( "Initiating new recursive query - ID: " + id + ", " + question.toString() );
 
         initialTransport = _initialTransport;
 
@@ -125,7 +125,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         }
 
         // turn our IP addresses into agent parameters...
-        nsIPs.forEach( (ip) -> agents.add( new AgentParams( ITERATIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
+        nsIPs.forEach( (ip) -> agents.add( new AgentParams( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
 
         return query();
     }
@@ -138,7 +138,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         // figure out what agent we're going to use...
         agent = new DNSServerAgent( resolver, this, nio, executor, agents.remove( 0 ) );
 
-        LOGGER.finer( "Iterative query - ID: " + id + ", " + question.toString() + ", using " + agent.name );
+        LOGGER.finer( "Recursive query - ID: " + id + ", " + question.toString() + ", using " + agent.name );
 
         DNSMessage.Builder builder = new DNSMessage.Builder();
         builder.setOpCode( DNSOpCode.QUERY );
@@ -148,7 +148,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         queryMessage = builder.getMessage();
 
-        queryLog.log("Sending iterative query for " + question + " to " + agent.name + " via " + transport );
+        queryLog.log("Sending recursive query for " + question + " to " + agent.name + " via " + transport );
 
         Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
 
@@ -243,8 +243,8 @@ public class DNSRecursiveQuery extends DNSQuery {
                 subQueries.incrementAndGet();
                 LOGGER.finest( "Firing " + nsDomainName.text + " A record sub-query " + subQueries.get() + " from query " + id );
                 DNSQuestion aQuestion = new DNSQuestion( nsDomainName, DNSRRType.A );
-                DNSRecursiveQuery iterativeQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
-                iterativeQuery.initiate( UDP );
+                DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
+                recursiveQuery.initiate( UDP );
             }
 
             // fire off the query for the AAAA record...
@@ -252,8 +252,8 @@ public class DNSRecursiveQuery extends DNSQuery {
                 subQueries.incrementAndGet();
                 LOGGER.finest( "Firing " + nsDomainName.text + " AAAA record sub-query " + subQueries.get() + " from query " + id );
                 DNSQuestion aQuestion = new DNSQuestion( nsDomainName, DNSRRType.AAAA );
-                DNSRecursiveQuery iterativeQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
-                iterativeQuery.initiate( UDP );
+                DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
+                recursiveQuery.initiate( UDP );
             }
         } );
     }
@@ -407,9 +407,9 @@ public class DNSRecursiveQuery extends DNSQuery {
 
             LOGGER.finest( "Firing " + nextDomain.text + " " + nextType + " record sub-query " + subQueries.get() + " from query " + id );
             DNSQuestion aQuestion = new DNSQuestion( nextDomain, nextType );
-            DNSRecursiveQuery iterativeQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(),
+            DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(),
                     this::handleChainSubQuery );
-            iterativeQuery.initiate( UDP );
+            recursiveQuery.initiate( UDP );
             return;
         }
 
@@ -455,7 +455,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         // if we have no IPs to query, we've got a problem...
         if( nextIPs.isEmpty() ) {
-            handler.accept( queryOutcome.notOk( "Iterative query; no name server available for: " + question.qname.text, null,
+            handler.accept( queryOutcome.notOk( "Recursive query; no name server available for: " + question.qname.text, null,
                     new QueryResult( queryMessage, null, queryLog )) );
             activeQueries.remove( (short) id );
             return;
@@ -463,12 +463,12 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         // turn our IP addresses into agent parameters...
         agents.clear();
-        nextIPs.forEach( (ip) -> agents.add( new AgentParams( ITERATIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
+        nextIPs.forEach( (ip) -> agents.add( new AgentParams( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
 
         // figure out what agent we're going to use...
         agent = new DNSServerAgent( resolver, this, nio, executor, agents.remove( 0 ) );
 
-        String logMsg = "Subsequent iterative query: " + question.toString() + ", using " + agent.name;
+        String logMsg = "Subsequent recursive query: " + question.toString() + ", using " + agent.name;
         LOGGER.finer( logMsg );
         queryLog.log( logMsg );
 

@@ -90,19 +90,30 @@ public abstract class DNSChannel {
      */
     protected static class Wrapper implements Runnable {
 
-        private final Runnable task;
+        private final Runnable task;  // the Runnable that we're wrapping...
 
+
+        /**
+         * Create a new instance of this class that wraps the given {@link Runnable}.
+         *
+         * @param _task The {@link Runnable} task to be wrapped.
+         */
         protected Wrapper( final Runnable _task ) {
             task = _task;
         }
 
 
+        /**
+         * The wrapper's {@link Runnable} implementation, which does nothing except catch any thrown exceptions and log them.
+         */
         @Override
         public void run() {
 
             try {
-                task.run();
+                task.run();   // run the wrapped task...
             }
+
+            // if any exception is thrown by the wrapped task, catch it and log it...
             catch( final Exception _e ) {
                 LOGGER.log( Level.SEVERE, "Exception thrown in ExecutorService task", _e );
             }
