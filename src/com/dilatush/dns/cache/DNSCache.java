@@ -58,7 +58,6 @@ public class DNSCache {
     private        final TreeMap<DNSTTLCacheKey,DNSCacheEntry> ttlMap;    // entries are (expiration, unique long) -> (cache entry)...
 
 
-    // TODO: fix the TTL handling - base it from file date when reading file, download date when downloading...
     /**
      * <p>Creates a new instance of this class using the given arguments:</p>
      * <ul>

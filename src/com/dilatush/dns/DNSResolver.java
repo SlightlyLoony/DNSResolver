@@ -120,7 +120,6 @@ public class DNSResolver {
 
         DNSQuery query = new DNSForwardedQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), agents, _handler );
 
-        // TODO: call handler on failure...
         return query.initiate( _initialTransport );
     }
 
