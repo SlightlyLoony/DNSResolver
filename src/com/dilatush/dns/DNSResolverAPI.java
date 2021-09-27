@@ -3,6 +3,7 @@ package com.dilatush.dns;
 import com.dilatush.dns.agent.DNSTransport;
 import com.dilatush.dns.message.DNSQuestion;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Checks;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
@@ -90,6 +91,35 @@ public class DNSResolverAPI {
      */
     public DNSResolverAPI( final DNSResolver _resolver ) {
         this( _resolver, DNSServerSelection.speed() );
+    }
+
+
+    /**
+     * <p>Asynchronously resolve the {@link DNSResourceRecord}s of the given {@link DNSRRType} for the given fully-qualified domain name (FQDN), calling the given handler with
+     * the result.  Note that the type may be {@link DNSRRType#ANY}, which will cause <i>all</i> resource records for the given FQDN to be resolved.</p>
+     * <p>Returns a "not ok" outcome if there was a problem initiating network operations to transmit the query to a DNS server.</p>
+     * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
+     * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
+     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more {@link DNSResourceRecord}s.</p>
+     *
+     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;DNSResourceRecord&gt;&gt;&gt;} handler that will be called with the result of this query.
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more DNS resource records.
+     * @param _type The {@link DNSRRType} of resource records to resolve.
+     * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
+     */
+    public Outcome<?> resolve( final Consumer<Outcome<List<DNSResourceRecord>>> _handler, final String _fqdn, final DNSRRType _type ) {
+
+        Checks.required( _fqdn, _handler, _type );
+
+        // set up the handler that will process the raw results of the query...
+        AsyncHandler<List<DNSResourceRecord>> handler = new AsyncHandler<>( _handler, (qr) -> qr.response().answers );
+
+        // get the question we're going to ask the DNS...
+        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, _type );
+        if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
+
+        // fire off the query...
+        return query( qo.info(), handler::handler );
     }
 
 
@@ -260,6 +290,38 @@ public class DNSResolverAPI {
 
         // fire off the query...
         return query( qo.info(), handler::handler );
+    }
+
+
+    /**
+     * <p>Synchronously resolve the {@link DNSResourceRecord}s of the given {@link DNSRRType} for the given fully-qualified domain name (FQDN), returning an
+     * {@link Outcome Outcome&lt;List&lt;DNSResourceRecord&gt;&gtl;} with the result.  Note that the type may be
+     * {@link DNSRRType#ANY}, which will cause <i>all</i> resource records for the given FQDN to be resolved.</p>
+     * <p>Returns a "not ok" outcome for any problem occurring during this operation.</p>
+     * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
+     * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
+     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more {@link DNSResourceRecord}s.</p>
+     *
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more DNS resource records.
+     * @param _type The {@link DNSRRType} of resource records to resolve.
+     * @return The {@link Outcome Outcome&lt;List&lt;DNSResourceRecord&gt;&gtl;} result.
+     */
+    public Outcome<List<DNSResourceRecord>> resolve( final String _fqdn, final DNSRRType _type ) {
+
+        Checks.required( _fqdn, _type );
+
+        // set up the handler that will process wait for the asynchronous result...
+        SyncHandler<List<DNSResourceRecord>> handler = new SyncHandler<>();
+
+        // initiate an asynchronous query...
+        Outcome<?> ao = resolve( handler::handler, _fqdn, _type );
+
+        // if we had a problem sending the query, fail politely...
+        if( ao.notOk() )
+            return handler.syncOutcome.notOk( ao.msg(), ao.cause() );
+
+        // now we just wait for our answer to arrive...
+        return handler.waitForCompletion();
     }
 
 

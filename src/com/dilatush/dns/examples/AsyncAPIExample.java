@@ -7,6 +7,7 @@ import com.dilatush.util.Outcome;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.List;
@@ -58,6 +59,9 @@ public class AsyncAPIExample {
 
         // get the IPv6 addresses for a few FQDNs and print the results...
         resolveIPv6( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
+
+        // get the IP addresses for a few FQDNs and print the results...
+        resolveIP( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
 
         // get the name servers for some FQDNs and print the results...
         resolveNameServers( _api, "yahoo.com", "www.cnn.com", "qqq.cnn.com" );
@@ -138,9 +142,9 @@ public class AsyncAPIExample {
 
         Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
 
-            Outcome<?> ip4o = _api.resolveIPv6Addresses( new HandleIPv6( fqdn )::handler, fqdn );
+            Outcome<?> ip6o = _api.resolveIPv6Addresses( new HandleIPv6( fqdn )::handler, fqdn );
 
-            if( ip4o.ok() )
+            if( ip6o.ok() )
                 System.out.println( "Query initiated for " + fqdn + " IPv6 addresses" );
             else
                 System.out.println( "Problem initiating query for " + fqdn + " IPv6 addresses" );
@@ -167,6 +171,44 @@ public class AsyncAPIExample {
                 System.out.println( "IPv6:  not ok: " + fqdn + ": server reports " + ((DNSServerException) _result.cause()).responseCode );
             else
                 System.out.println( "IPv6:  not ok: " + fqdn + ": " + _result.msg() );
+        }
+    }
+
+
+    // use the given API to resolve and print out the IP addresses of the given FQDNs...
+    private static void resolveIP( final DNSResolverAPI _api, final String... _fqdn ) {
+
+        Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
+
+            Outcome<?> ipo = _api.resolveIPAddresses( new HandleIP( fqdn )::handler, fqdn );
+
+            if( ipo.ok() )
+                System.out.println( "Query initiated for " + fqdn + " IP addresses" );
+            else
+                System.out.println( "Problem initiating query for " + fqdn + " IP addresses" );
+        } );
+    }
+
+
+    private static class HandleIP {
+
+        private final String fqdn;
+
+        private HandleIP( final String _fqdn ) {
+            fqdn = _fqdn;
+        }
+
+        private void handler( final Outcome<List<InetAddress>> _result ) {
+            if( _result.ok() )
+                if( _result.info().size() > 0 )
+                    _result.info().forEach( (ip) -> System.out.println( "IP:      ok: " + ip.toString() ) );
+                else
+                    System.out.println( "IP:      ok: " + fqdn + " has no IP addresses" );
+            else
+            if( _result.cause() instanceof DNSServerException )
+                System.out.println( "IP:  not ok: " + fqdn + ": server reports " + ((DNSServerException) _result.cause()).responseCode );
+            else
+                System.out.println( "IP:  not ok: " + fqdn + ": " + _result.msg() );
         }
     }
 
