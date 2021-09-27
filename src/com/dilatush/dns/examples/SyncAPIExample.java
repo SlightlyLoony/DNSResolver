@@ -3,10 +3,13 @@ package com.dilatush.dns.examples;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
 import com.dilatush.dns.DNSServerException;
+import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Outcome;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.List;
@@ -57,11 +60,17 @@ public class SyncAPIExample {
         // get the IPv6 addresses for a few FQDNs and print the results...
         resolveIPv6( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
 
+        // get the IP addresses for a few FQDNs and print the results...
+        resolveIP( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
+
         // get the name servers for some FQDNs and print the results...
         resolveNameServers( _api, "yahoo.com", "www.cnn.com", "qqq.cnn.com" );
 
         // get the text for some FQDNs and print the results...
         resolveText( _api, "yahoo.com", "www.cnn.com", "cnn.com", "google.com", "qqq.cnn.com" );
+
+        // get the resource records for some FQDNs and print the results...
+        resolve( _api, "yahoo.com", "www.cnn.com", "cnn.com", "google.com", "qqq.cnn.com" );
     }
 
 
@@ -137,6 +146,28 @@ public class SyncAPIExample {
     }
 
 
+    // use the given API to resolve and print out the IP addresses of the given FQDNs...
+    private static void resolveIP( final DNSResolverAPI _api, final String... _fqdn ) {
+
+        System.out.println( "Resolved IP addresses:" );
+
+        Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
+
+            Outcome<List<InetAddress>> ipo = _api.resolveIPAddresses( fqdn );
+            if( ipo.ok() )
+                if( ipo.info().size() > 0 )
+                    ipo.info().forEach( (ip) -> System.out.println( "      ok: " + ip.toString() ) );
+                else
+                    System.out.println( "      ok: " + fqdn + " has no IPv6 addresses" );
+            else
+            if( ipo.cause() instanceof DNSServerException )
+                System.out.println( "  not ok: " + fqdn + ": server reports " + ((DNSServerException) ipo.cause()).responseCode );
+            else
+                System.out.println( "  not ok: " + fqdn + ": " + ipo.msg() );
+        } );
+    }
+
+
     // use the given API to resolve and print out the IPv4 addresses of the given FQDNs...
     private static void resolveNameServers( final DNSResolverAPI _api, final String... _fqdn ) {
 
@@ -173,10 +204,32 @@ public class SyncAPIExample {
                 else
                     System.out.println( "      ok: " + fqdn + " has no text" );
             else
-                if( txto.cause() instanceof DNSServerException )
-                    System.out.println( "  not ok: " + fqdn + ": server reports " + ((DNSServerException) txto.cause()).responseCode );
+            if( txto.cause() instanceof DNSServerException )
+                System.out.println( "  not ok: " + fqdn + ": server reports " + ((DNSServerException) txto.cause()).responseCode );
+            else
+                System.out.println( "  not ok: " + fqdn + ": " + txto.msg() );
+        } );
+    }
+
+
+    // use the given API to resolve and print out all the resource records of the given FQDNs...
+    private static void resolve( final DNSResolverAPI _api, final String... _fqdn ) {
+
+        System.out.println( "Resolved resource records:" );
+
+        Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
+
+            Outcome<List<DNSResourceRecord>> txto = _api.resolve( fqdn, DNSRRType.ANY );
+            if( txto.ok() )
+                if( txto.info().size() > 0 )
+                    txto.info().forEach( (rr) -> System.out.println( "      ok: " + fqdn + " has record: " + rr.toString() ) );
                 else
-                    System.out.println( "  not ok: " + fqdn + ": " + txto.msg() );
+                    System.out.println( "      ok: " + fqdn + " has no resource records" );
+            else
+            if( txto.cause() instanceof DNSServerException )
+                System.out.println( "  not ok: " + fqdn + ": server reports " + ((DNSServerException) txto.cause()).responseCode );
+            else
+                System.out.println( "  not ok: " + fqdn + ": " + txto.msg() );
         } );
     }
 }
