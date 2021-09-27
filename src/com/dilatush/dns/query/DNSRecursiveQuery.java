@@ -118,25 +118,21 @@ public class DNSRecursiveQuery extends DNSQuery {
                 continue;
             }
 
+            queryLog.log( "No cache hits; starting from root" );
+
             // no IPs yet, and we're searching the root - this means one of:
             // -- we're not caching anything
             // -- the root name servers expired and were purged
             // either way, we need to read the root hints to get the root name servers...
-            Outcome<List<DNSResourceRecord>> rho = cache.getRootHints();
-
-            // if we couldn't read the root hints, we're in trouble...
-            if( rho.notOk() ) {
+            // so read the root hints, and if we get a null, that means we couldn't read them - very bad...
+            List<DNSResourceRecord> rootHints = resolver.getRootHints();
+            if( rootHints == null ) {
                 queryLog.log( "Could not read root hints" );
-                return queryOutcome.notOk( rho.msg(), rho.cause(), new QueryResult( queryMessage, null, queryLog ) );
+                return queryOutcome.notOk( "Could not load root hints", new QueryResult( queryMessage, null, queryLog ) );
             }
 
-            queryLog.log( "No cache hits; starting from root" );
-
-            // add all the root hint resource records to the cache...
-            cache.add( rho.info() );
-
             // add the root name server IP addresses to our list...
-            addIPs( nsIPs, rho.info() );
+            addIPs( nsIPs, rootHints );
 
             // if we STILL have no IPs for name servers, we're dead (this really should never happen until the heat death of the universe)...
             if( nsIPs.isEmpty() ) {

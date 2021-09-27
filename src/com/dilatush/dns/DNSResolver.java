@@ -5,6 +5,7 @@ package com.dilatush.dns;
 // TODO: Comments and Javadocs...
 
 
+import com.dilatush.dns.cache.DNSRootHints;
 import com.dilatush.dns.query.*;
 import com.dilatush.dns.cache.DNSCache;
 import com.dilatush.dns.message.DNSMessage;
@@ -27,7 +28,6 @@ import static com.dilatush.dns.IPVersion.*;
 import static com.dilatush.dns.query.DNSQuery.QueryResult;
 import static com.dilatush.dns.message.DNSRRType.*;
 
-// TODO: fix terminology
 /**
  * <p>Instances of this class implement a DNS "resolver".  Given a fully-qualified domain name (FQDN), a resolver uses name servers on the Internet to discover information about
  * that FQDN.  Most commonly the information sought is the IP address (v4 or v6) of the host with that FQDN, but there are other uses as well.  For instance, given the FQDN
@@ -63,13 +63,14 @@ public class DNSResolver {
     private final ExecutorService               executor;
     private final DNSNIO                        nio;
     private final IPVersion                     ipVersion;
-    private final List<ServerSpec>             serverSpecs;
-    private final Map<String,ServerSpec>       serversByName;
-    private final List<ServerSpec>             serversByPriority;
-    private final List<ServerSpec>             serversBySpeed;
+    private final List<ServerSpec>              serverSpecs;
+    private final Map<String,ServerSpec>        serversByName;
+    private final List<ServerSpec>              serversByPriority;
+    private final List<ServerSpec>              serversBySpeed;
     private final Map<Short,DNSQuery>           activeQueries;
     private final AtomicInteger                 nextQueryID;
     private final DNSCache                      cache;
+    private final DNSRootHints                  rootHints;
 
 
     /**
@@ -91,6 +92,7 @@ public class DNSResolver {
         activeQueries = new ConcurrentHashMap<>();
         nextQueryID   = new AtomicInteger();
         cache         = new DNSCache( _maxCacheSize, _maxAllowableTTLMillis );
+        rootHints     = new DNSRootHints();
 
         // map our agent parameters by name...
         Map<String,ServerSpec> byName = new HashMap<>();
@@ -238,6 +240,21 @@ public class DNSResolver {
         _handler.accept( outcomeQueryResult.ok( queryResult ) );
 
         return true;
+    }
+
+
+    public List<DNSResourceRecord> getRootHints() {
+
+        Outcome<List<DNSResourceRecord>> rho = rootHints.current();
+
+        // if we couldn't read the root hints, return a null...
+        if( rho.notOk() )
+            return null;
+
+        // add all the root hint resource records to the cache...
+        cache.add( rho.info() );
+
+        return rho.info();
     }
 
 

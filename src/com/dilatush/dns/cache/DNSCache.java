@@ -1,12 +1,11 @@
 package com.dilatush.dns.cache;
 
-import com.dilatush.util.Checks;
-import com.dilatush.util.General;
-import com.dilatush.util.Outcome;
 import com.dilatush.dns.DNSUtil;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.dns.rr.UNIMPLEMENTED;
+import com.dilatush.util.Checks;
+import com.dilatush.util.General;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -17,12 +16,13 @@ import static java.util.logging.Level.FINE;
 
 /**
  * <p>Instances of this class implement a cache for DNS resource records for fully-qualified domain names (FQDNs).  The cache has a fixed limit on the number of resource records
- * that can be cached, set at instantiation time.  Resource records that have expired (as defined by the TTL field) are automatically purged from the cache and are never returned.
- * The cache is intentionally very simple, allowing only for new resource records to be added, and resource records for a given FQDN to be retrieved.  The design emphasizes
+ * that can be cached, set at instantiation time.  Resource records that have expired (as defined by the TTL field) are automatically purged from the cache and are never returned
+ * when fetching from the cache.</p>
+ * <p>The cache is intentionally very simple, allowing only for new resource records to be added, and resource records for a given FQDN to be fetched.  The design emphasizes
  * minimizing memory consumption (to allow larger caches) over performance (since even a relatively slow cache is still vastly faster than a DNS query).  Instances of this class
  * are mutable (obviously), but are threadsafe because the methods sensitive to mutation are all synchronized.</p>
- * <p>Expired resource records are purged when they are discovered (during resource record addition or retrieval).  There is no explicit purge method, and the purges are never for
- * more than a few records at a time.  This means that at any given time the cache may contain any number of expired records, especially if additions and retrievals are relatively
+ * <p>Expired resource records are purged when they are discovered (during resource record addition or fetching).  There is no explicit purge method, and the purges are never for
+ * more than a few records at a time.  This means that at any given time the cache may contain any number of expired records, especially if additions and fetches are relatively
  * infrequent events.  However, in no case will an expired resource record in the cache prevent a new resource record from being added.  This "lazy" approach to purging expired
  * records has the benefit of spreading the purging work out, so there will never be a lengthy blockage due to expired record purging.</p>
  */
@@ -33,10 +33,9 @@ public class DNSCache {
     private static final int  DEFAULT_MAX_CACHE_SIZE           = 1000;
     private static final long DEFAULT_MAX_ALLOWABLE_TTL_MILLIS = 2 * 60 * 60 * 1000;  // 2 hours...
 
-    private        final int                                   maxCacheSize;
-    private        final long                                  maxAllowableTTLMillis;
-    private        final AtomicLong                            uniqueInteger;
-    private        final DNSRootHints                          rootHints;
+    private        final int          maxCacheSize;           // the maximum number of resource records that this cache may contain...
+    private        final long         maxAllowableTTLMillis;  // the maximum (longest) time-to-live (TTL) that any resource record in the cache is allowed to have...
+    private        final AtomicLong   uniqueInteger;          // differentiates ttlMap entries (see below) that have the same expiration time...
 
     /****************************************************************************************************************************************************
      * The two maps below are the key data structures for the cache.
@@ -81,7 +80,6 @@ public class DNSCache {
         entryMap              = new HashMap<>( maxCacheSize );
         ttlMap                = new TreeMap<>();
         uniqueInteger         = new AtomicLong();
-        rootHints             = new DNSRootHints();
 
         LOGGER.log( FINE, "Created DNSCache, max size " + maxCacheSize + " DNS resource records" );
     }
@@ -280,7 +278,7 @@ public class DNSCache {
         // we have some candidate entries, so long as they haven't expired, so make a list to hold the results...
         List<DNSResourceRecord> result = new ArrayList<>( entries.length );
 
-        // record the current time (so we can check for expired records...
+        // record the current time (so we can check for expired records)...
         long currentTime = System.currentTimeMillis();
 
         // iterate over all the entries to look for the ones that belong in the results...
@@ -391,18 +389,6 @@ public class DNSCache {
 
         // we really should never get here, but if we do it means we didn't find the resource record we're trying to remove...
         // in that case, we just hang our head and leave...
-    }
-
-
-    /**
-     * Returns a list of resource records in the current root hints file.  This method will first attempt to read the local root hints file.  If that fails, or if the entries have
-     * expired, it will read the latest root hints from the URL, update the local file, and return the fresh root hints from that.  If all of those efforts fail, it will return an
-     * error.
-     *
-     * @return the {@link Outcome Outcome&lt;List&lt;DNSResourceRecord&gt;&gt;} result of this operation.
-     */
-    public Outcome<List<DNSResourceRecord>> getRootHints() {
-        return rootHints.current();
     }
 
 
