@@ -69,8 +69,8 @@ public class DNSServerAgent {
         priority         = _priority;
         name             = _name;
 
-        udpChannel = new DNSUDPChannel( this, nio, executor, _serverAddress );
-        tcpChannel = new DNSTCPChannel( this, nio, executor, _serverAddress );
+        udpChannel = new DNSUDPChannel( query, this, nio, executor, _serverAddress );
+        tcpChannel = new DNSTCPChannel( query, this, nio, executor, _serverAddress );
     }
 
     protected Outcome<?> sendQuery( final DNSMessage _queryMsg, final DNSTransport _transport ) {
@@ -94,7 +94,7 @@ public class DNSServerAgent {
 
 
     private void handleTimeout() {
-        query.handleResponseProblem( "Query timed out", new DNSTimeoutException( "Query timed out" ) );
+        query.handleProblem( "Query timed out before response was received", new DNSTimeoutException( "Query timed out" ) );
     }
 
 
@@ -113,7 +113,7 @@ public class DNSServerAgent {
 
         if( messageOutcome.notOk() ) {
             close();
-            query.handleResponseProblem( "Could not decode received DNS message", null );
+            query.handleProblem( "Could not decode received DNS message", null );
 
             // log the bytes we could not decode...
             byte[] badBytes = Arrays.copyOfRange( _receivedData.array(), 0, _receivedData.limit() );

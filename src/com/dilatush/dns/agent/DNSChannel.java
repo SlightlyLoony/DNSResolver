@@ -19,10 +19,12 @@ import java.util.logging.Logger;
 public abstract class DNSChannel {
 
     private   static final Logger LOGGER = General.getLogger();
+    private   static final int    MAX_MESSAGES_IN_SEND_QUEUE = 10;
 
     protected static final Outcome.Forge<?> outcome = new Outcome.Forge<>();
 
 
+    protected        final DNSQuery          query;          // the query that owns the agent that owns this channel...
     protected        final DNSServerAgent    agent;          // the agent that owns this channel...
     protected        final DNSNIO            nio;            // the NIO for this channel to use...
     protected        final ExecutorService   executor;       // the executor for this channel to use...
@@ -33,20 +35,22 @@ public abstract class DNSChannel {
     /**
      * Create a new instance of this base class with the given parameters.
      *
+     * @param _query The query that owns the agent that owns this channel.
      * @param _agent The agent that owns this channel.
      * @param _nio The {@link DNSNIO} for this channel to use for network I/O.
      * @param _executor The {@link ExecutorService} for this channel to use.
      * @param _serverAddress The IP address and port for this channel to connect to.
      */
-    protected DNSChannel( final DNSServerAgent _agent, final DNSNIO _nio, final ExecutorService _executor, final InetSocketAddress _serverAddress ) {
+    protected DNSChannel( final DNSQuery _query, final DNSServerAgent _agent, final DNSNIO _nio, final ExecutorService _executor, final InetSocketAddress _serverAddress ) {
 
-        Checks.required( _agent, _nio, _executor, _serverAddress );
+        Checks.required( _query, _agent, _nio, _executor, _serverAddress );
 
+        query         = _query;
         agent         = _agent;
         nio           = _nio;
         executor      = _executor;
         serverAddress = _serverAddress;
-        sendData      = new ArrayDeque<>();
+        sendData      = new ArrayDeque<>( MAX_MESSAGES_IN_SEND_QUEUE );
     }
 
 
@@ -58,8 +62,26 @@ public abstract class DNSChannel {
      */
     protected abstract Outcome<?> send( final DNSMessage _msg );
 
+
+    /**
+     * Write data from the send buffer to the network, addressed to this channel's server address.  This method is called from {@link DNSNIO}'s <i>IO Runner</i> thread, and should
+     * never be called from anywhere else.  The work done in this method should be minimal and constrained, as it's being executed in the I/O loop.  This method must be carefully
+     * coded so that it cannot throw any uncaught exceptions that would terminate the I/O loop thread.
+     */
     protected abstract void       write();
+
+
+    /**
+     * Read data from the server this channel is addressed to, into the read buffer.  This method is called from {@link DNSNIO}'s <i>IO Runner</i> thread, and should
+     * never be called from anywhere else.  The work done in this method should be minimal and constrained, as it's being executed in the I/O loop; message decoding and handling
+     * must be done in another thread.  This method must be carefully coded so that it cannot throw any uncaught exceptions that would terminate the I/O loop thread.
+     */
     protected abstract void       read();
+
+
+    /**
+     * Close this channel.
+     */
     protected abstract void       close();
 
 

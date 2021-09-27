@@ -27,8 +27,8 @@ public class DNSTCPChannel extends DNSChannel {
     private       ByteBuffer           message;
 
 
-    protected DNSTCPChannel( final DNSServerAgent _agent, final DNSNIO _nio, final ExecutorService _executor, final InetSocketAddress _serverAddress ) {
-        super( _agent, _nio, _executor, _serverAddress );
+    protected DNSTCPChannel( final DNSQuery _query, final DNSServerAgent _agent, final DNSNIO _nio, final ExecutorService _executor, final InetSocketAddress _serverAddress ) {
+        super( _query, _agent, _nio, _executor, _serverAddress );
     }
 
 
@@ -88,7 +88,7 @@ public class DNSTCPChannel extends DNSChannel {
 
 
     @Override
-    public void write() {
+    protected void write() {
 
         ByteBuffer buffer = sendData.peekLast();
 
@@ -106,8 +106,12 @@ public class DNSTCPChannel extends DNSChannel {
                     break;
 
             } catch( IOException _e ) {
-                // TODO: error handling...
-                _e.printStackTrace();
+                close();
+                executor.submit( new Wrapper( () -> query.handleProblem(
+                        "Error sending message by TCP: ",
+                        new DNSResolverException( _e.getMessage(), _e, DNSResolverError.NETWORK ) )
+                ) );
+                return;
             }
         }
 
@@ -115,8 +119,7 @@ public class DNSTCPChannel extends DNSChannel {
             try {
                 nio.register( this, tcpChannel, OP_READ );
             } catch( ClosedChannelException _e ) {
-                // TODO: error handling...
-                _e.printStackTrace();
+                // naught to do; safe to ignore...
             }
         }
     }
@@ -150,10 +153,13 @@ public class DNSTCPChannel extends DNSChannel {
                     close();
                 }
             }
-
-        } catch( IOException _e ) {
-            // TODO: error handling...
-            _e.printStackTrace();
+        }
+        catch( IOException _e ) {
+            close();
+            executor.submit( new Wrapper( () -> query.handleProblem(
+                    "Error receiving message by TCP: ",
+                    new DNSResolverException( _e.getMessage(), _e, DNSResolverError.NETWORK ) )
+            ) );
         }
     }
 

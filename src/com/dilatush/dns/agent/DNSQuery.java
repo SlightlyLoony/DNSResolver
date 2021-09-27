@@ -214,8 +214,8 @@ public abstract class DNSQuery {
     }
 
 
-    protected void handleResponseProblem( final String _msg, final Throwable _cause ) {
-        queryLog.log("Problem with response: " + _msg + ((_cause != null) ? " - " + _cause.getMessage() : "") );
+    protected void handleProblem( final String _msg, final Throwable _cause ) {
+        queryLog.log( _msg + ((_cause != null) ? " - " + _cause.getMessage() : "") );
         while( !agents.isEmpty() ) {
             Outcome<?> qo = query();
             if( qo.ok() )

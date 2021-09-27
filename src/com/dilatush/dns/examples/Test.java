@@ -18,22 +18,14 @@ public class Test {
         DNSResolver.Builder builder = new DNSResolver.Builder();
         DNSResolver resolver = builder.getDNSResolver().info();
 
-        DNSQuestion question = DNSUtil.getQuestion( "www.cnn.com", DNSRRType.AAAA ).info();
+        DNSQuestion question = DNSUtil.getQuestion( "cnn.com", DNSRRType.TXT ).info();
         resolver.query( question, Test::handler1, DNSTransport.UDP );
-        sleep( 3000 );
-        resolver.query( question, Test::handler2, DNSTransport.UDP );
 
-        sleep(5000);
+        sleep(500000);
     }
 
 
     private static void handler1( final Outcome<DNSQuery.QueryResult> _outcome ) {
-        System.out.println( _outcome.info().log() );
-        breakpoint();
-    }
-
-
-    private static void handler2( final Outcome<DNSQuery.QueryResult> _outcome ) {
         System.out.println( _outcome.info().log() );
         breakpoint();
     }
