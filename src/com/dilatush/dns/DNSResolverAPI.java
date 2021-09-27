@@ -9,8 +9,11 @@ import com.dilatush.util.Outcome;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Logger;
@@ -19,7 +22,6 @@ import static com.dilatush.dns.DNSUtil.*;
 import static com.dilatush.dns.agent.DNSQuery.QueryResult;
 import static com.dilatush.dns.agent.DNSTransport.UDP;
 
-// TODO: should the synchronous methods leverage the asynchronous methods?
 /**
  * <p>Instances of this class wrap an instance of {@link DNSResolver} to provide a simpler and more convenient API than is provided by the {@link DNSResolver} itself.</p>
  * <p>If the wrapped {@link DNSResolver} has been provisioned with DNS servers that it can forward to, then this API will forward all its queries to those DNS servers.
@@ -40,7 +42,7 @@ public class DNSResolverAPI {
     private static final Logger LOGGER = General.getLogger();
 
     private static final Outcome.Forge<?>                  outcome     = new Outcome.Forge<>();
-//    private static final Outcome.Forge<List<Inet4Address>> ipv4Outcome = new Outcome.Forge<>();
+    private static final Outcome.Forge<List<InetAddress>>  ipOutcome   = new Outcome.Forge<>();
 
     /** The {@link DNSResolver} wrapped by this instance. */
     public final DNSResolver        resolver;
@@ -143,42 +145,68 @@ public class DNSResolverAPI {
         // fire off the query...
         return query( qo.info(), handler::handler );
     }
-//
-//
-//    /**
-//     * <p>Asynchronously resolve the Internet Protocol addresses (both version 4 and 6) for the given fully-qualified domain name (FQDN), calling the given handler with the
-//     * result.</p>
-//     * <p>Returns a "not ok" outcome if there was a problem initiating network operations to transmit the query to a DNS server.</p>
-//     * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
-//     * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
-//     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IP addresses.</p>
-//     *
-//     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
-//     * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IP addresses.
-//     * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
-//     */
-//    public Outcome<?> resolveIPAddresses( final Consumer<Outcome<List<InetAddress>>> _handler, final String _fqdn  ) {
-//
-//        Checks.required( _fqdn, _handler );
-//
-//        // We must make two separate queries to get the answers, as DNS has no ability to query for both A and AAAA at once.  We're doing this asynchronously, so we make
-//        // both queries at once, then wait until we get both answers.  We only return with an error if BOTH queries had errors...
-//
-//        // launch our two queries...
-//        Outcome<?> v4qo = resolveIPv6Addresses( null, _fqdn );
-//        Outcome<?> v6qo = resolveIPv6Addresses( null, _fqdn );
-//
-//
-//        // set up the handler that will process the raw results of the query...
-//        AsyncHandler<List<InetAddress>> handler = new AsyncHandler<>( _handler, ( qr) -> extractIPv6Addresses( qr.response().answers, _fqdn ) );
-//
-//        // get the question we're going to ask the DNS...
-//        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.AAAA );
-//        if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
-//
-//        // fire off the query...
-//        return query( qo.info(), handler::handler );
-//    }
+
+
+    /**
+     * <p>Asynchronously resolve the Internet Protocol addresses (both version 4 and 6) for the given fully-qualified domain name (FQDN), calling the given handler with the
+     * result.  Note that this operation requires two queries.</p>
+     * <p>Returns a "not ok" outcome if there was a problem initiating network operations to transmit either query to a DNS server.</p>
+     * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
+     * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
+     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IP addresses.</p>
+     *
+     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IP addresses.
+     * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
+     */
+    public Outcome<?> resolveIPAddresses( final Consumer<Outcome<List<InetAddress>>> _handler, final String _fqdn  ) {
+
+        Checks.required( _fqdn, _handler );
+
+        // where we're going to stuff the results...
+        List<InetAddress> result = new ArrayList<>();
+
+        // where we keep track of whether we've already received one result...
+        AtomicInteger resultCount = new AtomicInteger();
+
+        // We must make two separate queries to get the answers, as DNS has no ability to query for both A and AAAA at once.  We're doing this asynchronously, so we make
+        // both queries at once, then wait until we get two answers.  We return with an error if either query had errors being sent...
+
+        // create our special handlers, to receive both IPv4 and IPv6 results...
+        Consumer<Outcome<List<Inet4Address>>> handler4 = (ipso) -> {
+            if( ipso.ok() )
+                handleIPResults( _handler, ipso.info(), result, resultCount );
+            else
+                _handler.accept( ipOutcome.notOk( ipso.msg(), ipso.cause() ) );
+        };
+        Consumer<Outcome<List<Inet6Address>>> handler6 = (ipso) -> {
+            if( ipso.ok() )
+                handleIPResults( _handler, ipso.info(), result, resultCount );
+            else
+                _handler.accept( ipOutcome.notOk( ipso.msg(), ipso.cause() ) );
+        };
+
+        // launch our two queries...
+        Outcome<?> v4qo = resolveIPv4Addresses( handler4, _fqdn );
+        Outcome<?> v6qo = resolveIPv6Addresses( handler6, _fqdn );
+
+        // if both queries were ok, then report ok; otherwise, report the badness...
+        return (v4qo.ok() && v6qo.ok())
+                ? outcome.ok()
+                : v4qo.ok()
+                    ? outcome.notOk( v6qo.msg(), v6qo.cause() )
+                    : outcome.notOk( v4qo.msg(), v4qo.cause() );
+    }
+
+
+    private synchronized void handleIPResults( final Consumer<Outcome<List<InetAddress>>> _handler, final List<? extends InetAddress> _received,
+                                               final List<InetAddress> _result, final AtomicInteger _resultCount ) {
+        _result.addAll( _received );
+        int resultCount = _resultCount.incrementAndGet();
+        if( resultCount == 2 ) {
+            _handler.accept( ipOutcome.ok( _result ) );
+        }
+    }
 
 
     /**
@@ -247,15 +275,17 @@ public class DNSResolverAPI {
 
         Checks.required( _fqdn );
 
-        // set up the handler that will process the raw results of the query...
-        SyncHandler<List<Inet4Address>> handler = new SyncHandler<>( (qr) -> extractIPv4Addresses( qr.response().answers, _fqdn ) );
+        // set up the handler that will process wait for the asynchronous result...
+        SyncHandler<List<Inet4Address>> handler = new SyncHandler<>();
 
-        // get the question we're going to ask the DNS...
-        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.A );
-        if( qo.notOk() ) return handler.syncOutcome.notOk( qo.msg(), qo.cause() );
+        // initiate an asynchronous query...
+        Outcome<?> ao = resolveIPv4Addresses( handler::handler, _fqdn );
 
-        // fire off the query...
-        query( qo.info(), handler::handler );
+        // if we had a problem sending the query, fail politely...
+        if( ao.notOk() )
+            return handler.syncOutcome.notOk( ao.msg(), ao.cause() );
+
+        // now we just wait for our answer to arrive...
         return handler.waitForCompletion();
     }
 
@@ -272,15 +302,47 @@ public class DNSResolverAPI {
 
         Checks.required( _fqdn );
 
-        // set up the handler that will process the raw results of the query...
-        SyncHandler<List<Inet6Address>> handler = new SyncHandler<>( (qr) -> extractIPv6Addresses( qr.response().answers, _fqdn ) );
+        // set up the handler that will process wait for the asynchronous result...
+        SyncHandler<List<Inet6Address>> handler = new SyncHandler<>();
 
-        // get the question we're going to ask the DNS...
-        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.AAAA );
-        if( qo.notOk() ) return handler.syncOutcome.notOk( qo.msg(), qo.cause() );
+        // initiate an asynchronous query...
+        Outcome<?> ao = resolveIPv6Addresses( handler::handler, _fqdn );
 
-        // fire off the query...
-        query( qo.info(), handler::handler );
+        // if we had a problem sending the query, fail politely...
+        if( ao.notOk() )
+            return handler.syncOutcome.notOk( ao.msg(), ao.cause() );
+
+        // now we just wait for our answer to arrive...
+        return handler.waitForCompletion();
+    }
+
+
+    /**
+     * <p>Synchronously resolve the Internet Protocol addresses (both version 4 and 6) for the given fully-qualified domain name (FQDN), calling the given handler with the
+     * result.  Note that this operation requires two queries.</p>
+     * <p>Returns a "not ok" outcome if there was a problem initiating network operations to transmit either query to a DNS server.</p>
+     * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
+     * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
+     * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IP addresses.</p>
+    *
+     * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv6 addresses.
+     * @return The {@link Outcome Outcome&lt;List&lt;InetAddress&gt;&gt;} with the result of this query.
+     */
+    public Outcome<List<InetAddress>> resolveIPAddresses( final String _fqdn ) {
+
+        Checks.required( _fqdn );
+
+        // set up the handler that will process wait for the asynchronous result...
+        SyncHandler<List<InetAddress>> handler = new SyncHandler<>();
+
+        // initiate an asynchronous query...
+        Outcome<?> ao = resolveIPAddresses( handler::handler, _fqdn );
+
+        // if we had a problem sending the query, fail politely...
+        if( ao.notOk() )
+            return handler.syncOutcome.notOk( ao.msg(), ao.cause() );
+
+        // now we just wait for our answer to arrive...
         return handler.waitForCompletion();
     }
 
@@ -297,15 +359,17 @@ public class DNSResolverAPI {
 
         Checks.required( _fqdn );
 
-        // set up the handler that will process the raw results of the query...
-        SyncHandler<List<String>> handler = new SyncHandler<>( (qr) -> extractText( qr.response().answers ) );
+        // set up the handler that will process wait for the asynchronous result...
+        SyncHandler<List<String>> handler = new SyncHandler<>();
 
-        // get the question we're going to ask the DNS...
-        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.TXT );
-        if( qo.notOk() ) return handler.syncOutcome.notOk( qo.msg(), qo.cause() );
+        // initiate an asynchronous query...
+        Outcome<?> ao = resolveText( handler::handler, _fqdn );
 
-        // fire off the query...
-        query( qo.info(), handler::handler );
+        // if we had a problem sending the query, fail politely...
+        if( ao.notOk() )
+            return handler.syncOutcome.notOk( ao.msg(), ao.cause() );
+
+        // now we just wait for our answer to arrive...
         return handler.waitForCompletion();
     }
 
@@ -322,15 +386,17 @@ public class DNSResolverAPI {
 
         Checks.required( _fqdn );
 
-        // set up the handler that will process the raw results of the query...
-        SyncHandler<List<String>> handler = new SyncHandler<>( (qr) -> extractNameServers( qr.response().answers ) );
+        // set up the handler that will process wait for the asynchronous result...
+        SyncHandler<List<String>> handler = new SyncHandler<>();
 
-        // get the question we're going to ask the DNS...
-        Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.NS );
-        if( qo.notOk() ) return handler.syncOutcome.notOk( qo.msg(), qo.cause() );
+        // initiate an asynchronous query...
+        Outcome<?> ao = resolveNameServers( handler::handler, _fqdn );
 
-        // fire off the query...
-        query( qo.info(), handler::handler );
+        // if we had a problem sending the query, fail politely...
+        if( ao.notOk() )
+            return handler.syncOutcome.notOk( ao.msg(), ao.cause() );
+
+        // now we just wait for our answer to arrive...
         return handler.waitForCompletion();
     }
 
@@ -408,20 +474,12 @@ public class DNSResolverAPI {
     private static class SyncHandler<T> {
 
         private final Outcome.Forge<T>        syncOutcome = new Outcome.Forge<>();
-        private       Outcome<QueryResult>    qr;
         private final Semaphore               waiter = new Semaphore( 0 );
-        private final Function<QueryResult,T> munger;   // the function that processes the answers into the desired type...
+        private       Outcome<T>              asyncOutcome;
 
 
-        private SyncHandler( final Function<QueryResult,T> _munger ) {
-            munger = _munger;
-        }
-
-
-        private void handler( final Outcome<QueryResult> _qr ) {
-            qr = _qr;
-            if( qr.ok() )
-                LOGGER.finest( "-----\n" + qr.info().log().toString() );
+        private void handler( final Outcome<T> _asyncOutcome ) {
+            asyncOutcome = _asyncOutcome;
             waiter.release();
         }
 
@@ -433,9 +491,9 @@ public class DNSResolverAPI {
                 // naught to do...
             }
 
-            return qr.ok()                                         // how we build the outcome depends on whether it was ok...
-                    ? syncOutcome.ok( munger.apply( qr.info() ) )  // it was ok, so munge the QueryResult to get the type we want...
-                    : syncOutcome.notOk( qr.msg(), qr.cause() );   // it was not ok, so just relay the message and cause...
+            return asyncOutcome.ok()                                                   // how we build the outcome depends on whether it was ok...
+                    ? syncOutcome.ok(    asyncOutcome.info()                      )    // it was ok, so the asyncOutcome has our data...
+                    : syncOutcome.notOk( asyncOutcome.msg(), asyncOutcome.cause() );   // it was not ok, so just relay the message and cause...
         }
     }
 }

@@ -1,15 +1,13 @@
 package com.dilatush.dns.examples;
 
 import com.dilatush.dns.DNSResolver;
-import com.dilatush.dns.DNSUtil;
-import com.dilatush.dns.agent.DNSQuery;
-import com.dilatush.dns.agent.DNSTransport;
-import com.dilatush.dns.message.DNSQuestion;
-import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.DNSResolverAPI;
 import com.dilatush.util.Outcome;
 
+import java.net.InetAddress;
+import java.util.List;
+
 import static com.dilatush.util.General.breakpoint;
-import static java.lang.Thread.sleep;
 
 public class Test {
 
@@ -18,15 +16,9 @@ public class Test {
         DNSResolver.Builder builder = new DNSResolver.Builder();
         DNSResolver resolver = builder.getDNSResolver().info();
 
-        DNSQuestion question = DNSUtil.getQuestion( "cnn.com", DNSRRType.TXT ).info();
-        resolver.query( question, Test::handler1, DNSTransport.UDP );
+        DNSResolverAPI api = new DNSResolverAPI( resolver );
 
-        sleep(500000);
-    }
-
-
-    private static void handler1( final Outcome<DNSQuery.QueryResult> _outcome ) {
-        System.out.println( _outcome.info().log() );
+        Outcome<List<InetAddress>> qo = api.resolveIPAddresses( "www.hp.com" );
         breakpoint();
     }
 }
