@@ -467,21 +467,21 @@ public class DNSResolver {
 
         private HandlerWrapper( final BiConsumer<Outcome<QueryResult>,Object> _handler, final Object _attachment ) {
             Checks.required( _handler );
-            handler1     = null;
-            handler2     = _handler;
+            handler1      = null;
+            handler2      = _handler;
             useAttachment = true;
-            attachment   = _attachment;
-            handled      = new AtomicBoolean();
+            attachment    = _attachment;
+            handled       = new AtomicBoolean();
         }
 
 
         private HandlerWrapper( final Consumer<Outcome<QueryResult>> _handler ) {
             Checks.required( _handler );
-            handler1     = _handler;
-            handler2     = null;
-            useAttachment = true;
-            attachment   = null;
-            handled      = new AtomicBoolean();
+            handler1      = _handler;
+            handler2      = null;
+            useAttachment = false;
+            attachment    = null;
+            handled       = new AtomicBoolean();
         }
 
 
