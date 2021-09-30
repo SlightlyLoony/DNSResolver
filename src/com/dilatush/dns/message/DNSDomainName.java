@@ -19,7 +19,7 @@ public class DNSDomainName {
 
     private static final Outcome.Forge<DNSDomainName> outcome = new Outcome.Forge<>();
 
-    /** This domain name as a Java string, in lower-case (for domain name case insensitivity.  */
+    /** This domain name as a Java string, in lower-case (for domain name case insensitivity).  */
     public final String         text;
 
     /** The length of the bytes representing this domain name. */
@@ -37,7 +37,7 @@ public class DNSDomainName {
      */
     private DNSDomainName( final List<DNSLabel> _labels ) {
 
-        labels = Collections.unmodifiableList( _labels );
+        labels = Collections.unmodifiableList( _labels );  // make the list immutable, as "labels" is public final...
 
         // compute the encoded name's length...
         int len = 0;
@@ -57,7 +57,7 @@ public class DNSDomainName {
 
 
     /**
-     * Return this domain name as a sequence of labels encoded in bytes, with a byte containing zero as a suffix.  Note that this is done outside a
+     * Return this domain name as a sequence of labels encoded in bytes, with a byte containing zero as a suffix.  Note that this is done outside the context of a
      * particular message, so the result is not compressed.
      *
      * @return this domain name as a sequence of labels encoded in bytes, with a byte containing zero as a suffix.
@@ -102,7 +102,7 @@ public class DNSDomainName {
      */
 
     /**
-     * Encode this domain name into the given DNS message {@link ByteBuffer} at the current position, using message compression when possible.  The
+     * Encode this domain name into the given DNS message {@link ByteBuffer} at the current buffer position, using message compression when possible.  The
      * given map of name offsets is indexed by string representations of domain names and sub-domain names that are already directly encoded in the
      * message.  If this domain name (or its sub-domain names) matches any of them, an offset is encoded instead of the actual characters.  Otherwise,
      * the name is directly encoded.  Any directly encoded domains or sub-domains is added to the map of offsets.  For example, the first time (in a
@@ -122,7 +122,7 @@ public class DNSDomainName {
         List<DNSLabel> ls = new ArrayList<>( labels );
         while( ls.size() > 0 ) {
 
-            // we know this name is good, so this never always resolve to null...
+            // we know this name is good, so the ".info()" never resolves to null...
             DNSDomainName dnsName = DNSDomainName.fromLabels( ls ).info();
 
             // if we have an offset for this domain or sub-domain, it's already been directly encoded, and we can compress it...
@@ -138,6 +138,7 @@ public class DNSDomainName {
 
                 // create and encode the offset pointer, and we're done...
                 // note that no terminating null is needed in this case...
+                // the 0xC000 marks this as an offset, rather than a character; 0xC? is not a valid ASCII character...
                 int ptr = 0xC000 + offset;
                 _msgBuffer.putShort( (short) ptr );
                 return outcome.ok();
@@ -302,9 +303,9 @@ public class DNSDomainName {
 
     /**
      * Attempts to create a new instance of this class from the encoded bytes in the given DNS message {@link ByteBuffer}.  Note that because this
-     * is decoding from the message, the encoding may be the compressed form.  This method will decompress any such encoding.
+     * is decoding from the message, the encoding may be the compressed form; this method will decompress any such compressed encoding.
      *
-     * @param _buffer The {@link ByteBuffer} containing the encoded bytes to create the new {@link DNSDomainName} instance from.
+     * @param _buffer The {@link ByteBuffer} containing the encoded bytes to create the new {@link DNSDomainName} instance from, starting at the current position.
      * @return The {@link Outcome Outcome&lt;DNSDomainName&gt;} containing the result of this attempt.
      */
     public static Outcome<DNSDomainName> decode( final ByteBuffer _buffer ) {
@@ -318,7 +319,7 @@ public class DNSDomainName {
             );
 
         // in the case of a compressed form, we need to remember what the buffer position should be when we've finished...
-        int nextPos = -1;  // impossible value; will be set the first time we run into a compression pointer...
+        int nextPos = -1;  // impossible value; will be set the first time we run into a compression pointer (but not any subsequent ones)...
 
         // decode one label at a time, building up a sequence of labels...
         List<DNSLabel> labels = new ArrayList<>();
