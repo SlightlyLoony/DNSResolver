@@ -1,17 +1,18 @@
 package com.dilatush.dns;
 
 // TODO: Handle responses with no answers (see RFC 2308)
-// TODO: Get rid of protected everywhere
+// TODO: Get rid of protected everywhere I can
+// TODO: rethink the package naming and contents
 // TODO: Comments and Javadocs...
 
 
-import com.dilatush.dns.cache.DNSRootHints;
-import com.dilatush.dns.query.*;
 import com.dilatush.dns.cache.DNSCache;
+import com.dilatush.dns.cache.DNSRootHints;
 import com.dilatush.dns.message.DNSMessage;
 import com.dilatush.dns.message.DNSOpCode;
 import com.dilatush.dns.message.DNSQuestion;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.query.*;
 import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
@@ -22,11 +23,14 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.logging.Logger;
 
 import static com.dilatush.dns.IPVersion.*;
-import static com.dilatush.dns.query.DNSQuery.QueryResult;
 import static com.dilatush.dns.message.DNSRRType.*;
+import static com.dilatush.dns.query.DNSQuery.QueryResult;
+import static com.dilatush.util.General.getLogger;
 
 /**
  * <p>Instances of this class implement a DNS "resolver".  Given a fully-qualified domain name (FQDN), a resolver uses name servers on the Internet to discover information about
@@ -56,6 +60,7 @@ import static com.dilatush.dns.message.DNSRRType.*;
 @SuppressWarnings( "unused" )
 public class DNSResolver {
 
+    private static final Logger                     LOGGER             = getLogger();
     private static final Outcome.Forge<DNSResolver> outcomeResolver    = new Outcome.Forge<>();
     private static final Outcome.Forge<QueryResult> outcomeQueryResult = new Outcome.Forge<>();
     private static final Outcome.Forge<?>           outcome            = new Outcome.Forge<>();
@@ -114,10 +119,28 @@ public class DNSResolver {
     // forwarded query...
     // only one question per query!
     // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
-    public Outcome<?> query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport,
-                       final DNSServerSelection _serverSelection ) {
+    public Outcome<?> query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler, final DNSTransport _initialTransport,
+                             final DNSServerSelection _serverSelection, final Object _attachment ) {
 
-        Checks.required( _question, _handler, _initialTransport, _serverSelection );
+        Checks.required( _handler );
+
+        return queryImpl( _question, new HandlerWrapper( _handler, _attachment )::handle, _initialTransport, _serverSelection );
+    }
+
+
+    public Outcome<?> query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport,
+                             final DNSServerSelection _serverSelection ) {
+
+        Checks.required( _handler );
+
+        return queryImpl( _question, new HandlerWrapper( _handler )::handle, _initialTransport, _serverSelection );
+    }
+
+
+    private Outcome<?> queryImpl( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler,
+                              final DNSTransport _initialTransport, final DNSServerSelection _serverSelection ) {
+
+        Checks.required( _question, _initialTransport, _serverSelection );
 
         if( resolveFromCache( _question, _handler ) )
             return outcome.ok();
@@ -133,9 +156,26 @@ public class DNSResolver {
     // recursive query...
     // only one question per query!
     // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
+    public Outcome<?> query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler,
+                             final DNSTransport _initialTransport, final Object _attachment ) {
+
+        Checks.required( _handler );
+
+        return queryImpl( _question, new HandlerWrapper( _handler, _attachment )::handle, _initialTransport );
+    }
+
+
     public Outcome<?> query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport ) {
 
-        Checks.required( _question, _handler, _initialTransport );
+        Checks.required( _handler );
+
+        return queryImpl( _question, new HandlerWrapper( _handler )::handle, _initialTransport );
+    }
+
+
+    private Outcome<?> queryImpl( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport ) {
+
+        Checks.required( _question, _initialTransport );
 
         if( resolveFromCache( _question, _handler ) )
             return outcome.ok();
@@ -152,14 +192,15 @@ public class DNSResolver {
 
 
     /**
-     * Attempts to resolve the given question from the DNS cache, return {@code true} if it resolved successfully.  To be resolved from the cache, the given {@link DNSQuestion}
+     * Attempts to resolve the given question from the DNS cache, returns {@code true} if it resolved successfully.  To be resolved from the cache, the given {@link DNSQuestion}
      * must be for a discrete record type, not {@link DNSRRType#ANY} or {@link DNSRRType#UNIMPLEMENTED}.  There must be at least one result matching the question.  This method
      * will follow CNAME record chains to see if the terminus of the chain is a record matching the type in the question.  If the resolution is successful, this method synthesizes
-     * a {@link DNSMessage} containing the answers retrieved from the cache and passes it to the given handler.  If the handler is called, the outcome it passes will always be ok.
-     * This method does not add any resource records to the authorities or additional records sections to the synthesized response message.
+     * a {@link DNSMessage} containing the answers retrieved from the cache and passes it to the given handler.  If the one of the handlers is called, the outcome it passes will
+     * always be ok.  This method does not add any resource records to the authorities or additional records sections to the synthesized response message.
      *
      * @param _question The {@link DNSQuestion} to attempt to resolve from the DNSCache.
-     * @param _handler The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler to call if the question is successfully resolved from the cache.
+     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler to call if the question is successfully resolved from the cache and
+     *                  attachments are not being used.
      * @return {@code true} if the question was resolved from the cache.
      */
     private boolean resolveFromCache( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler ) {
@@ -236,7 +277,7 @@ public class DNSResolver {
         // finally, we have our query result...
         QueryResult queryResult = new QueryResult( query, response, queryLog );
 
-        // call the handler with the result, for we are done...
+        // call the right handler with the result, for we are done...
         _handler.accept( outcomeQueryResult.ok( queryResult ) );
 
         return true;
@@ -258,11 +299,6 @@ public class DNSResolver {
     }
 
 
-    /**
-     *
-     * @param _serverSelection
-     * @return
-     */
     private List<ServerSpec> getServers( final DNSServerSelection _serverSelection ) {
 
         return switch( _serverSelection.strategy ) {
@@ -416,6 +452,49 @@ public class DNSResolver {
             Checks.required( _serverAddress, _name );
 
             serverSpecs.add( new ServerSpec( _timeoutMillis, _priority, _name, _serverAddress ) );
+        }
+    }
+
+
+    private static class HandlerWrapper {
+
+        private final Consumer<Outcome<QueryResult>>          handler1;
+        private final BiConsumer<Outcome<QueryResult>,Object> handler2;
+        private final boolean                                 useAttachment;
+        private final Object                                  attachment;
+        private final AtomicBoolean                           handled;
+
+
+        private HandlerWrapper( final BiConsumer<Outcome<QueryResult>,Object> _handler, final Object _attachment ) {
+            Checks.required( _handler );
+            handler1     = null;
+            handler2     = _handler;
+            useAttachment = true;
+            attachment   = _attachment;
+            handled      = new AtomicBoolean();
+        }
+
+
+        private HandlerWrapper( final Consumer<Outcome<QueryResult>> _handler ) {
+            Checks.required( _handler );
+            handler1     = _handler;
+            handler2     = null;
+            useAttachment = true;
+            attachment   = null;
+            handled      = new AtomicBoolean();
+        }
+
+
+        private void handle( final Outcome<QueryResult> _outcome ) {
+            boolean alreadyDone = handled.getAndSet( true );
+            if( alreadyDone ) {
+                LOGGER.severe( "Handler called more than once" );
+                return;
+            }
+            if( useAttachment )
+                handler2.accept( _outcome, attachment );
+            else
+                handler1.accept( _outcome );
         }
     }
 
