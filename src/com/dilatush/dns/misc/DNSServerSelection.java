@@ -1,8 +1,8 @@
-package com.dilatush.dns;
+package com.dilatush.dns.misc;
 
 import com.dilatush.util.Checks;
 
-import static com.dilatush.dns.DNSServerSelectionStrategy.*;
+import static com.dilatush.dns.misc.DNSServerSelectionStrategy.*;
 
 public class DNSServerSelection {
 

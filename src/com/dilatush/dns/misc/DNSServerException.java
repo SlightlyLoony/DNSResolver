@@ -1,4 +1,4 @@
-package com.dilatush.dns;
+package com.dilatush.dns.misc;
 
 import com.dilatush.dns.message.DNSResponseCode;
 import com.dilatush.util.Outcome;

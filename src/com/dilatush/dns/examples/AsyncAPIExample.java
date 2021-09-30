@@ -2,7 +2,7 @@ package com.dilatush.dns.examples;
 
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
-import com.dilatush.dns.DNSServerException;
+import com.dilatush.dns.misc.DNSServerException;
 import com.dilatush.dns.message.DNSRRType;
 import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Outcome;

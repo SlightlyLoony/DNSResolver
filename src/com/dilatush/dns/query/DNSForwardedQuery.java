@@ -6,7 +6,7 @@ import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolver.ServerSpec;
-import com.dilatush.dns.cache.DNSCache;
+import com.dilatush.dns.misc.DNSCache;
 import com.dilatush.dns.message.DNSMessage;
 import com.dilatush.dns.message.DNSOpCode;
 import com.dilatush.dns.message.DNSQuestion;

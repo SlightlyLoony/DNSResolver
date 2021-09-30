@@ -1,7 +1,7 @@
 package com.dilatush.dns.query;
 
 import com.dilatush.dns.DNSResolver;
-import com.dilatush.dns.DNSResolverException;
+import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.General;
 
@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static com.dilatush.dns.DNSResolverError.NETWORK;
+import static com.dilatush.dns.misc.DNSResolverError.NETWORK;
 import static java.lang.System.currentTimeMillis;
 
 

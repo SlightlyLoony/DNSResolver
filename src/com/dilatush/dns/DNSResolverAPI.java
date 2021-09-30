@@ -2,6 +2,8 @@ package com.dilatush.dns;
 
 import com.dilatush.dns.message.DNSQuestion;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.misc.DNSServerSelection;
+import com.dilatush.dns.misc.DNSUtil;
 import com.dilatush.dns.query.DNSTransport;
 import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Checks;
@@ -20,7 +22,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Logger;
 
-import static com.dilatush.dns.DNSUtil.*;
+import static com.dilatush.dns.misc.DNSUtil.*;
 import static com.dilatush.dns.query.DNSQuery.QueryResult;
 import static com.dilatush.dns.query.DNSTransport.UDP;
 

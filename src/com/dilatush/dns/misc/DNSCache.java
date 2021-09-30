@@ -1,6 +1,5 @@
-package com.dilatush.dns.cache;
+package com.dilatush.dns.misc;
 
-import com.dilatush.dns.DNSUtil;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.dns.rr.UNIMPLEMENTED;

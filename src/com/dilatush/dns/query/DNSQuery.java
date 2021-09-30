@@ -2,8 +2,8 @@ package com.dilatush.dns.query;
 
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolver.ServerSpec;
-import com.dilatush.dns.DNSServerException;
-import com.dilatush.dns.cache.DNSCache;
+import com.dilatush.dns.misc.DNSServerException;
+import com.dilatush.dns.misc.DNSCache;
 import com.dilatush.dns.message.DNSMessage;
 import com.dilatush.dns.message.DNSQuestion;
 import com.dilatush.dns.message.DNSResponseCode;

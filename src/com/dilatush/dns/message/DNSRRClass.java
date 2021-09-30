@@ -1,7 +1,7 @@
 package com.dilatush.dns.message;
 
-import com.dilatush.dns.DNSResolverError;
-import com.dilatush.dns.DNSResolverException;
+import com.dilatush.dns.misc.DNSResolverError;
+import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
 

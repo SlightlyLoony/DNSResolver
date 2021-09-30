@@ -4,8 +4,8 @@ package com.dilatush.dns.rr;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
-import com.dilatush.dns.DNSResolverError;
-import com.dilatush.dns.DNSResolverException;
+import com.dilatush.dns.misc.DNSResolverError;
+import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;

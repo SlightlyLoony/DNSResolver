@@ -1,6 +1,6 @@
 package com.dilatush.dns.query;
 
-import com.dilatush.dns.DNSException;
+import com.dilatush.dns.misc.DNSException;
 
 public class DNSTimeoutException extends DNSException {
 

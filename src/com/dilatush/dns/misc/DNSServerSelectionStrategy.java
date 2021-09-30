@@ -1,4 +1,4 @@
-package com.dilatush.dns;
+package com.dilatush.dns.misc;
 
 import com.dilatush.dns.query.DNSServerAgent;
 

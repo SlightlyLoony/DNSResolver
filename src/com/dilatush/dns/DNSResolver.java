@@ -6,8 +6,7 @@ package com.dilatush.dns;
 // TODO: Comments and Javadocs...
 
 
-import com.dilatush.dns.cache.DNSCache;
-import com.dilatush.dns.cache.DNSRootHints;
+import com.dilatush.dns.misc.*;
 import com.dilatush.dns.message.DNSMessage;
 import com.dilatush.dns.message.DNSOpCode;
 import com.dilatush.dns.message.DNSQuestion;
@@ -27,7 +26,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
-import static com.dilatush.dns.IPVersion.*;
+import static com.dilatush.dns.misc.IPVersion.*;
 import static com.dilatush.dns.message.DNSRRType.*;
 import static com.dilatush.dns.query.DNSQuery.QueryResult;
 import static com.dilatush.util.General.getLogger;
@@ -67,7 +66,7 @@ public class DNSResolver {
 
     private final ExecutorService               executor;
     private final DNSNIO                        nio;
-    private final IPVersion                     ipVersion;
+    private final IPVersion ipVersion;
     private final List<ServerSpec>              serverSpecs;
     private final Map<String,ServerSpec>        serversByName;
     private final List<ServerSpec>              serversByPriority;

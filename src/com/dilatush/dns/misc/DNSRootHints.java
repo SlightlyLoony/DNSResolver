@@ -1,7 +1,5 @@
-package com.dilatush.dns.cache;
+package com.dilatush.dns.misc;
 
-import com.dilatush.dns.DNSResolverError;
-import com.dilatush.dns.DNSResolverException;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.rr.A;
 import com.dilatush.dns.rr.AAAA;
