@@ -11,6 +11,7 @@ import java.util.List;
 import static com.dilatush.util.General.breakpoint;
 import static java.lang.Thread.sleep;
 
+@SuppressWarnings( "unused" )
 public class Test {
 
     public static void main( final String[] _args ) throws InterruptedException {

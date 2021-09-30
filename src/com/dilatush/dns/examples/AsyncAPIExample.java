@@ -42,7 +42,7 @@ public class AsyncAPIExample {
         System.out.println( "Using recursive resolver" );
 
         // get an API that uses a recursive resolver...
-        api = getRecursiveResolverAPI();
+        api = new DNSResolverAPI( DNSResolver.getDefaultRecursiveResolver() );
 
         // resolve some things...
         resolve( api );
@@ -57,7 +57,7 @@ public class AsyncAPIExample {
     private static void resolve( final DNSResolverAPI _api ) {
 
         // get the IPv4 addresses for a few FQDNs and print the results...
-        resolveIPv4( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
+        resolveIPv4( _api, "yahoo.com", "ppp.cnn.com", "www.cnn.com" );
 
         // get the IPv6 addresses for a few FQDNs and print the results...
         resolveIPv6( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
@@ -80,24 +80,11 @@ public class AsyncAPIExample {
 
         // create a DNS resolver that can forward to Google or Cloudflare...
         DNSResolver.Builder builder = new DNSResolver.Builder();
-        builder.addDNSServer( new InetSocketAddress( "8.8.8.8", 53 ), 2000, 0, "Google"     );
         builder.addDNSServer( new InetSocketAddress( "1.1.1.1", 53 ), 1500, 0, "Cloudflare" );
+        builder.addDNSServer( new InetSocketAddress( "8.8.8.8", 53 ), 2000, 0, "Google"     );
         Outcome<DNSResolver> ro = builder.getDNSResolver();
         if( ro.notOk() ) {
             System.out.println( "Could not build forwarding resolver: " + ro.msg() );
-            System.exit( 1 );
-        }
-        return new DNSResolverAPI( ro.info() );
-    }
-
-
-    private static DNSResolverAPI getRecursiveResolverAPI() {
-
-        // create a DNS resolver that can forward to Google or Cloudflare...
-        DNSResolver.Builder builder = new DNSResolver.Builder();
-        Outcome<DNSResolver> ro = builder.getDNSResolver();
-        if( ro.notOk() ) {
-            System.out.println( "Could not build recursive resolver: " + ro.msg() );
             System.exit( 1 );
         }
         return new DNSResolverAPI( ro.info() );

@@ -11,6 +11,7 @@ import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -132,17 +133,25 @@ public class SyncAPIExample {
         Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
 
             Outcome<List<Inet6Address>> ip6o = _api.resolveIPv6Addresses( fqdn );
-            if( ip6o.ok() )
-                if( ip6o.info().size() > 0 )
-                    ip6o.info().forEach( (ip) -> System.out.println( "      ok: " + ip.toString() ) );
-                else
-                    System.out.println( "      ok: " + fqdn + " has no IPv6 addresses" );
-            else
-            if( ip6o.cause() instanceof DNSServerException )
-                System.out.println( "  not ok: " + fqdn + ": server reports " + ((DNSServerException) ip6o.cause()).responseCode );
-            else
-                System.out.println( "  not ok: " + fqdn + ": " + ip6o.msg() );
+            List<InetAddress> inetAddressList = (ip6o.info() == null) ? null : new ArrayList<>( ip6o.info() );
+            Outcome<List<InetAddress>> ipo = new Outcome<>( ip6o.ok(), ip6o.msg(), ip6o.cause(), inetAddressList );
+            printResult( fqdn, ipo );
         } );
+    }
+
+
+    private static void printResult( final String fqdn, final Outcome<List<InetAddress>> _ipo ) {
+
+        if( _ipo.ok() )
+            if( _ipo.info().size() > 0 )
+                _ipo.info().forEach( ( ip) -> System.out.println( "      ok: " + ip.toString() ) );
+            else
+                System.out.println( "      ok: " + fqdn + " has no IPv6 addresses" );
+        else
+        if( _ipo.cause() instanceof DNSServerException )
+            System.out.println( "  not ok: " + fqdn + ": server reports " + ((DNSServerException) _ipo.cause()).responseCode );
+        else
+            System.out.println( "  not ok: " + fqdn + ": " + _ipo.msg() );
     }
 
 
@@ -154,16 +163,7 @@ public class SyncAPIExample {
         Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
 
             Outcome<List<InetAddress>> ipo = _api.resolveIPAddresses( fqdn );
-            if( ipo.ok() )
-                if( ipo.info().size() > 0 )
-                    ipo.info().forEach( (ip) -> System.out.println( "      ok: " + ip.toString() ) );
-                else
-                    System.out.println( "      ok: " + fqdn + " has no IPv6 addresses" );
-            else
-            if( ipo.cause() instanceof DNSServerException )
-                System.out.println( "  not ok: " + fqdn + ": server reports " + ((DNSServerException) ipo.cause()).responseCode );
-            else
-                System.out.println( "  not ok: " + fqdn + ": " + ipo.msg() );
+            printResult( fqdn, ipo );
         } );
     }
 

@@ -4,7 +4,6 @@ import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
 import com.dilatush.util.Outcome;
 
-import java.net.UnknownHostException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,7 +23,7 @@ public class AsyncApproachesExample {
 
     private static final Semaphore waiter = new Semaphore( 0 );
 
-    public static void main( final String[] _args ) throws UnknownHostException, InterruptedException {
+    public static void main( final String[] _args ) throws InterruptedException {
 
         initLogging( "example-logging.properties" );
 
