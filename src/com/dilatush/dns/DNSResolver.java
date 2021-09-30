@@ -2,7 +2,6 @@ package com.dilatush.dns;
 
 // TODO: Handle responses with no answers (see RFC 2308)
 // TODO: Get rid of protected everywhere I can
-// TODO: rethink the package naming and contents
 // TODO: Comments and Javadocs...
 
 
