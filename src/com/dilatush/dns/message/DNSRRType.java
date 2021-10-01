@@ -54,7 +54,10 @@ public enum DNSRRType {
     public final int     length;
 
 
+    // map of text representation to enum instance...
     private static final Map<String,DNSRRType>   fromText = new HashMap<>();  // mapping of text representation to instances of this class...
+
+    // map of value (code) to enum instance, for decoding...
     private static final Map<Integer, DNSRRType> fromCode = new HashMap<>();  // mapping of values (codes) to instances of this class...
 
     // initialized statically because we can't do it from the constructor...
@@ -65,8 +68,15 @@ public enum DNSRRType {
             fromCode.put( t.code, t );
         }
     }
-        
 
+
+    /**
+     * Creates a new instance of this enum with the given arguments.
+     *
+     * @param _isQTYPE {@code true} if this instance can only be used in a query.
+     * @param _text The text representation of this class.
+     * @param _code The code value for this class.
+     */
     DNSRRType( final boolean _isQTYPE, final String _text, final int _code ) {
 
         isQTYPE = _isQTYPE;
@@ -134,7 +144,8 @@ public enum DNSRRType {
     /**
      * Attempts to create an instance of {@link DNSRRType} from the given buffer, using bytes at the buffer's current position.  If the attempt is
      * successful, then the returned outcome is ok and the newly created instance of {@link DNSRRType} is the information in the outcome.  If the
-     * attempt fails, then the outcome is not ok and the message explains why.
+     * attempt fails, then the outcome is still ok, but {@link #UNIMPLEMENTED}, so that resource record types this package is unaware of may still be
+     * decoded.
      *
      * @param _buffer The {@link ByteBuffer} containing the bytes encoding the label.
      * @return The {@link Outcome Outcome&lt;DNSRRType&gt;} giving the results of the attempt.
@@ -143,6 +154,7 @@ public enum DNSRRType {
 
         Checks.required( _buffer );
 
+        // make sure we have enough bytes left...
         if( _buffer.remaining() < 2 )
             return outcome.notOk( "Decoder buffer underflow", new DNSResolverException( "Buffer underflow", DNSResolverError.DECODER_BUFFER_UNDERFLOW ) );
 
@@ -152,9 +164,8 @@ public enum DNSRRType {
         // try to decode it...
         DNSRRType result = fromCode( code );
 
-        if( isNull( result ) )
-            return outcome.ok( UNIMPLEMENTED );
-
-        return outcome.ok( result );
+        return isNull( result )
+                ? outcome.ok( UNIMPLEMENTED )
+                : outcome.ok( result );
     }
 }

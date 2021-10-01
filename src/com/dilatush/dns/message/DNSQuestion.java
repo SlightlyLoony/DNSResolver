@@ -33,7 +33,7 @@ public class DNSQuestion {
 
 
     /**
-     * Creates a new instance of this class with the given argument(s).
+     * Creates a new instance of this class with the given arguments.
      *
      * @param _qname  The domain name to ask a question about.
      * @param _qtype  The type of resource records wanted that pertain to the queried domain name.

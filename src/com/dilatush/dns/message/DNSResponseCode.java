@@ -18,12 +18,12 @@ public enum DNSResponseCode {
     NOT_IMPLEMENTED ( 4 ),  // Name server does not implement the kind of query...
     REFUSED         ( 5 );  // Name server refused to perform the operation (likely due to a policy)...
 
-    // remaining values (codes) 6-15 are reserved for future use...
+    // remaining possible values (codes) 6-15 are reserved for future use...
 
-    private static final Map<Integer, DNSResponseCode> fromCode = new HashMap<>();
-
+    // map of code to enum value, for decoding...
     // initialized statically because we can't do it from the constructor...
     // see this good explanation:  https://stackoverflow.com/questions/443980/why-cant-enums-constructor-access-static-fields
+    private static final Map<Integer, DNSResponseCode> fromCode = new HashMap<>();
     static {
         for( DNSResponseCode t : DNSResponseCode.values() ) {
             fromCode.put( t.code, t );
@@ -35,8 +35,12 @@ public enum DNSResponseCode {
     public final int code;
 
 
+    /**
+     * Creates a new instance of this enum with the given code.
+     *
+     * @param _code The code value for this instance.
+     */
     DNSResponseCode( final int _code ) {
-
         code = _code;
     }
 

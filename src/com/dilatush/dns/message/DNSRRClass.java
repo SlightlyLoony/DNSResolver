@@ -13,7 +13,7 @@ import java.util.Map;
 import static com.dilatush.util.General.isNull;
 
 /**
- * Enumerates the possible resource class types, and defines their codes and text representations.
+ * Enumerates the possible resource classes, and defines their codes and text representations.
  *
  * @author Tom Dilatush  tom@dilatush.com
  */
@@ -43,11 +43,13 @@ public enum DNSRRClass {
     public final int     length;
 
 
+    // map of text representation to enum instance...
     private static final Map<String, DNSRRClass>   fromText = new HashMap<>();  // mapping of text representation to instances of this class...
+
+    // map of code to enum instance, for decoding...
     private static final Map<Integer, DNSRRClass>  fromCode = new HashMap<>();  // mapping of values (codes) to instances of this class...
 
-
-    // initialized statically because we can't do it from the constructor...
+    // the maps above are initialized statically here because we can't do it from the constructor...
     // see this good explanation:  https://stackoverflow.com/questions/443980/why-cant-enums-constructor-access-static-fields
     static {
         for( DNSRRClass t : DNSRRClass.values() ) {
@@ -57,6 +59,13 @@ public enum DNSRRClass {
     }
 
 
+    /**
+     * Creates a new instance of this enum with the given arguments.
+     *
+     * @param _isQCLASS {@code true} if this instance can only be used in a query.
+     * @param _text The text representation of this class.
+     * @param _code The code value for this class.
+     */
     DNSRRClass( final boolean _isQCLASS, final String _text, final int _code ) {
 
         isQCLASS = _isQCLASS;

@@ -105,7 +105,9 @@ public class DNSLabel {
     /**
      * Attempts to create an instance of {@link DNSLabel} from the given buffer, using bytes at the buffer's current position.  If the attempt is
      * successful, then the returned outcome is ok and the newly created instance of {@link DNSLabel} is the information in the outcome.  If the
-     * attempt fails, then the outcome is not ok and the message explains why.
+     * attempt fails, then the outcome is not ok and the message explains why.  Note this method will accept any text in the label; the assumption is that if it's
+     * supplied by a DNS server (which is why we're decoding it), then it must be ok. The author has observed cases in the wild where periods were included inside the label;
+     * if he saw this one, there are most likely many others.
      *
      * @param _buffer The {@link ByteBuffer} containing the bytes encoding the label.
      * @return The {@link Outcome Outcome&lt;DNSLabel&gt;} giving the results of the attempt.

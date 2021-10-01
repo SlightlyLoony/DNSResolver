@@ -78,7 +78,8 @@ public class DNSMessage {
 
 
     /**
-     * Creates a new instance of this class with the given parameters.  Note that this constructor is private, and is used only by {@link Builder}.
+     * Creates a new instance of this class with the given parameters.  Note that this constructor is private, and is used only by {@link Builder} and
+     * {@link #getSyntheticResponse}.
      *
      * @param _id The 16-bit unsigned integer ID supplied the application creating the message.
      * @param _isResponse {@code true} if this message is a response, {@code false} if it is a query.
@@ -134,11 +135,23 @@ public class DNSMessage {
 
         Checks.required( _answers );
 
-        List<DNSResourceRecord> empty = new ArrayList<>(0);
-
         return new DNSMessage(
-                id, true, opCode, authoritativeAnswer, false, recurse, canRecurse, z, false, checkingDisabled, DNSResponseCode.OK,
-                questions, _answers, empty, empty );
+                id,                   // the response has the same ID as the query...
+                true,                 // it's a response...
+                opCode,               // the response has the same OpCode as the query...
+                false,                // these cached answers are not authoritative...
+                false,                // the response is not truncated..
+                recurse,              // response is copied from the query...
+                false,                // the cache cannot recurse...
+                z,                    // z is copied from the query...
+                false,                // the cached response is not authoritative...
+                false,                // checking is not disabled...
+                DNSResponseCode.OK,   // cached responses are by definition ok...
+                questions,            // copy the questions (always just one) from the query to the response...
+                _answers,             // the answers we're synthesizing a response for...
+                new ArrayList<>(0),   // our synthetic response has no authorities...
+                new ArrayList<>(0)    // our synthetic response has no additional records...
+        );
     }
 
 
@@ -173,21 +186,21 @@ public class DNSMessage {
             // fabricate and stuff away our sixteen bits of flags and codes, working from the LSBs up...
             int x;
             x = responseCode.code;
-            x |= checkingDisabled ? 0x0010 : 0;
-            x |= authenticated ? 0x0020 : 0;
-            x |= z ? 0x0040 : 0;
-            x |= canRecurse ? 0x0080 : 0;
-            x |= recurse ? 0x0100 : 0;
-            x |= truncated ? 0x0200 : 0;
+            x |= checkingDisabled    ? 0x0010 : 0;
+            x |= authenticated       ? 0x0020 : 0;
+            x |= z                   ? 0x0040 : 0;
+            x |= canRecurse          ? 0x0080 : 0;
+            x |= recurse             ? 0x0100 : 0;
+            x |= truncated           ? 0x0200 : 0;
             x |= authoritativeAnswer ? 0x0400 : 0;
             x |= (opCode.code << 11);
-            x |= isResponse ? 0x8000 : 0;
+            x |= isResponse          ? 0x8000 : 0;
             msgBuffer.putShort( (short) x );
 
             // stuff away our four counts for questions and resource records...
             msgBuffer.putShort( (short) questions.size() );
             msgBuffer.putShort( (short) answers.size() );
-            msgBuffer.putShort( (short) authorities.size() );
+            msgBuffer.putShort( (short) authorities.size()       );
             msgBuffer.putShort( (short) additionalRecords.size() );
 
             Outcome<?> result;
@@ -315,9 +328,17 @@ public class DNSMessage {
     }
 
 
+    /**
+     * Returns a string representation of this message.
+     *
+     * @return The string representation of this message.
+     */
     @Override
     public String toString() {
+
         StringBuilder sb = new StringBuilder();
+
+        // the header...
         sb.append( "DNSMessage - ID: " );
         sb.append( id );
         if( isResponse ) sb.append( ", response" ); else sb.append( ", query" );
@@ -331,8 +352,12 @@ public class DNSMessage {
         if( checkingDisabled ) sb.append( ", checking disabled" ); else sb.append( ", checking enabled" );
         sb.append( ", response code: " );
         sb.append( responseCode );
+
+        // the questions, which can't be absent and also can't have more than one...
         sb.append( "\nQuestion: " );
         sb.append( questions.get( 0 ).toString() );
+
+        // the answers...
         if( !answers.isEmpty() ) {
             sb.append( "\nAnswers:" );
             answers.forEach( (rr) -> {
@@ -340,6 +365,8 @@ public class DNSMessage {
                 sb.append( rr.toString() );
             } );
         }
+
+        // the authorities...
         if( !authorities.isEmpty() ) {
             sb.append( "\nAuthorities:" );
             authorities.forEach( (rr) -> {
@@ -347,6 +374,8 @@ public class DNSMessage {
                 sb.append( rr.toString() );
             } );
         }
+
+        // the additional records...
         if( !additionalRecords.isEmpty() ) {
             sb.append( "\nAdditional Records:" );
             additionalRecords.forEach( (rr) -> {
@@ -354,12 +383,14 @@ public class DNSMessage {
                 sb.append( rr.toString() );
             } );
         }
+
+        // and, finally, we're done...
         return sb.toString();
     }
 
 
     /**
-     * Instances of this class are used to build instances of {@link DNSMessage}.  Instances of this class are <i>not</i> immutable and are
+     * Instances of this class are used to build instances of {@link DNSMessage}.  Instances of this class are mutable and are
      * <i>not</i> threadsafe.
      */
     public static class Builder {

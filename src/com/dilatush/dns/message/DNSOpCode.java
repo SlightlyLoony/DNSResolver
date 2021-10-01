@@ -17,12 +17,12 @@ public enum DNSOpCode {
     NOTIFY( 4 ),  // a notification of zone change...
     UPDATE( 5 );  // a dynamic DNS update...
 
-    // remaining values (codes) 3, 6-15 are reserved for future use...
+    // remaining possible values (codes) 3, 6-15 are reserved for future use...
 
-    private static final Map<Integer, DNSOpCode> fromCode = new HashMap<>();
-
+    // map of the code to the enum value (for decoding)...
     // initialized statically because we can't do it from the constructor...
     // see this good explanation:  https://stackoverflow.com/questions/443980/why-cant-enums-constructor-access-static-fields
+    private static final Map<Integer, DNSOpCode> fromCode = new HashMap<>();
     static {
         for( DNSOpCode t : DNSOpCode.values() ) {
             fromCode.put( t.code, t );
@@ -34,8 +34,12 @@ public enum DNSOpCode {
     public final int code;
 
 
+    /**
+     * Creates a new instance of this enum with the given code.
+     *
+     * @param _code The code value for this instance.
+     */
     DNSOpCode( final int _code ) {
-
         code = _code;
     }
 
