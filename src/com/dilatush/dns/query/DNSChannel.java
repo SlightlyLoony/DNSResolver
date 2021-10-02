@@ -8,8 +8,8 @@ import com.dilatush.util.Outcome;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -19,7 +19,6 @@ import java.util.logging.Logger;
 public abstract class DNSChannel {
 
     private   static final Logger LOGGER = General.getLogger();
-    private   static final int    MAX_MESSAGES_IN_SEND_QUEUE = 10;
 
     protected static final Outcome.Forge<?> outcome = new Outcome.Forge<>();
 
@@ -50,7 +49,7 @@ public abstract class DNSChannel {
         nio           = _nio;
         executor      = _executor;
         serverAddress = _serverAddress;
-        sendData      = new ArrayDeque<>( MAX_MESSAGES_IN_SEND_QUEUE );
+        sendData      = new ConcurrentLinkedDeque<>();
     }
 
 
@@ -86,7 +85,9 @@ public abstract class DNSChannel {
 
 
     /**
-     * Instances of this class wrap other {@link Runnable} instances to provide exception catching and logging.
+     * Instances of this class wrap other {@link Runnable} instances to provide exception catching and logging.  Primarily this addresses an issue with {@link ExecutorService},
+     * to wit: if an exception is thrown by a task it is running, the exception is silently caught and ignored, and the thread running the task does not die.  This makes debugging
+     * quite the challenge.  This wrapper is intended to solve that problem.
      */
     protected static class Wrapper implements Runnable {
 

@@ -309,6 +309,9 @@ public class DNSRootHints {
                             ? rrOutcome.ok( nso.info() )
                             : rrOutcome.notOk( nso.msg(), nso.cause() );
                 }
+
+                // this cannot actually happen, but the compiler isn't happy if I don't have a default...
+                default -> rrOutcome.notOk( "Impossible record type" );
             };
 
             // if creating any resource record fails, we'll fail the whole thing...

@@ -44,7 +44,7 @@ public class DNSUDPChannel extends DNSChannel {
 
 
     /**
-     * Creates a new instance of this class with the given parameters.
+     * Creates a new instance of this class with the given parameters.  Note that creating an instance does not actually initialize the I/O at all.
      *
      * @param _query The query that owns the agent that owns this channel.
      * @param _agent The agent that owns this channel.
@@ -58,7 +58,8 @@ public class DNSUDPChannel extends DNSChannel {
 
 
     /**
-     * Send the given {@link DNSMessage} via this channel.  The message is sent asynchronously; this method will return immediately.
+     * Send the given {@link DNSMessage} via this channel.  The message is sent asynchronously; this method will return immediately.  Note that this method is not synchronized,
+     * but because there is a separate instance of this class per query, it doesn't need to be.
      *
      * @param _msg The {@link DNSMessage} to send.
      * @return The {@link Outcome Outcome&lt;?&gt;} of the send operation.
@@ -74,16 +75,12 @@ public class DNSUDPChannel extends DNSChannel {
             return outcome.notOk( "Could not encode message: " + emo.msg(), emo.cause() );
 
         // push the encoded message into the send data queue...
-        boolean wasAdded = sendData.offerFirst( emo.info() );
-        if( !wasAdded )
-            return outcome.notOk(
-                    "UDP send data queue full",
-                    new DNSResolverException( "UDP send data queue full", DNSResolverError.UDP_SEND_QUEUE_FULL )
-            );
+        boolean wasEmpty = (sendData.peekLast() == null);
+        sendData.addFirst( emo.info() );
 
         // if we just added the first data, open the UDP socket, bind, connect, and set write interest on...
         // note that because the lifetime of an instance of this class is a single query, this should ALWAYS be true...
-        if( sendData.size() == 1 ) {
+        if( wasEmpty ) {
 
             try {
                 udpChannel = DatagramChannel.open();                      // this actually creates the socket and channel...
@@ -91,9 +88,11 @@ public class DNSUDPChannel extends DNSChannel {
                 udpChannel.bind( null );                                  // we don't care what interface will be used...
                 udpChannel.connect( serverAddress );                      // there's no actual connection with UDP; this just constrains this channel to the given server...
                 nio.register( this, udpChannel, OP_WRITE | OP_READ );     // this tells NIO that we want to read and write to this channel...
-                return outcome.ok();                                      // we only get here if there were no problems in the code above...
             }
+
+            // if we had a problem initializing the UDP channel, close the channel and fail the query...
             catch( IOException _e ) {
+                close();
                 return outcome.notOk(
                         "Could not send message via UDP: " + _e.getMessage(),
                         new DNSResolverException( "Could not send message via UDP", _e, DNSResolverError.NETWORK )
@@ -101,6 +100,7 @@ public class DNSUDPChannel extends DNSChannel {
             }
         }
 
+        // if we make it here, then everything was hunky-dory...
         return outcome.ok();
     }
 
@@ -123,7 +123,7 @@ public class DNSUDPChannel extends DNSChannel {
                 udpChannel.write( buffer );  // we ignore the number of bytes written, as it will always be the entire UDP message in a single packet...
             }
 
-            // we had some I/O problem (unlikely with UDP, but possible, and not recoverable)...
+            // we had some I/O problem (unlikely with UDP, but possible, and not recoverable), so close the channel and fail the query...
             catch( IOException _e ) {
                 close();
                 executor.submit( new Wrapper( () -> query.handleProblem(
@@ -134,29 +134,45 @@ public class DNSUDPChannel extends DNSChannel {
             }
         }
 
-        if( sendData.isEmpty() ) {
+        // if there's no more data in the send queue, de-register our write interest...
+        if( sendData.peekLast() == null ) {
+
             try {
                 nio.register( this, udpChannel, OP_READ );
-            } catch( ClosedChannelException _e ) {
-                // naught to do here; it's safe to ignore this...
+            }
+
+            // naught to do here; it's safe to ignore this...
+            catch( ClosedChannelException _e ) {
+                // this is here to make the IDE happy; it doesn't like empty catch clauses...
             }
         }
     }
 
 
+    /**
+     * Read data from the server this channel is addressed to, into the read buffer.  This method is called from {@link DNSNIO}'s <i>IO Runner</i> thread, and should
+     * never be called from anywhere else.  The work done in this method should be minimal and constrained, as it's being executed in the I/O loop; message decoding and handling
+     * must be done in another thread.  This method must be carefully coded so that it cannot throw any uncaught exceptions that would terminate the I/O loop thread.
+     */
     @Override
     protected void read() {
 
         try {
+
+            // allocate a buffer that can hold the largest allowable UDP message (512 bytes)...
             ByteBuffer readData = ByteBuffer.allocate( 512 );
 
+            // try to read some data, and just leave if we didn't read anything at all...
             if( udpChannel.read( readData ) == 0 )
                 return;
 
+            // if we did read any data at all, then we got the entire message, as it's in a single packet by definition...
+            // so we prepare the data and send it off for decoding and handling...
             readData.flip();
             executor.submit( new Wrapper( () -> agent.handleReceivedData( readData, DNSTransport.UDP ) ) );
         }
 
+        // if something went wrong while reading, close the channel and fail the query...
         catch( IOException _e ) {
             close();
             executor.submit( new Wrapper( () -> query.handleProblem(
@@ -167,6 +183,9 @@ public class DNSUDPChannel extends DNSChannel {
     }
 
 
+    /**
+     * Close this channel.
+     */
     @Override
     protected void close() {
 
