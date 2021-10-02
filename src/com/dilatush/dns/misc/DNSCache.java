@@ -94,9 +94,9 @@ public class DNSCache {
 
 
     /**
-     * <p>Adds the given {@link DNSResourceRecord} to this cache with the given expiration time (using system time as returned by {@link System#currentTimeMillis()}).  Any attempt
-     * to add a {@code null} resource record is logged and ignored.  Attempts to add expired or {@link UNIMPLEMENTED} resource records are silently ignored.  The actual expiration
-     * time used in the cache is calculated as the earlier of the given expiration time or the current time plus the maximum allowable TTL.  </p>
+     * <p>Adds the given {@link DNSResourceRecord} to this cache with the given expiration time (using system time as returned by {@link System#currentTimeMillis()}).  Attempts
+     * to add expired or {@link UNIMPLEMENTED} resource records are silently ignored.  The actual expiration time used in the cache is calculated as the earlier of the given
+     * expiration time or the current time plus the maximum allowable TTL.  </p>
      * <p>If the cache already contains the maximum number of cache entries allowed, then the cached record with the earliest expiration time is purged before adding the new
      * resource record, thus capping the cache's size. </p>
      * <p>If there is already an entry in the cache that is of the same type as the entry to be added, with the same resource record data, then the existing entry is overwritten
@@ -343,7 +343,7 @@ public class DNSCache {
         // first remove the entry from the ttl map, using the handy-dandy key that we squirreled away...
         ttlMap.remove( _dce.ttlKey );
 
-        // then from the entry map...
+        // then remove it from the entry map...
 
         // first get the entries for this FQDN...
         DNSCacheEntry[] entries = entryMap.get( _dce.resourceRecord.name.text );
@@ -484,6 +484,12 @@ public class DNSCache {
         public final DNSTTLCacheKey ttlKey;
 
 
+        /**
+         * Create a new instance of this class with the given resource record and cache key.
+         *
+         * @param _resourceRecord The {@link DNSResourceRecord} to be included in this cache entry.
+         * @param _ttlKey The {@link DNSTTLCacheKey} to be included in this cache entry.
+         */
         public DNSCacheEntry( final DNSResourceRecord _resourceRecord, final DNSTTLCacheKey _ttlKey ) {
 
             Checks.required( _resourceRecord, _ttlKey );
@@ -494,6 +500,11 @@ public class DNSCache {
         }
 
 
+        /**
+         * Returns a string representation of this instance.
+         *
+         * @return The string representation of this instance.
+         */
         @Override
         public String toString() {
             return resourceRecord.toString();

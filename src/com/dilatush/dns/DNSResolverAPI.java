@@ -553,7 +553,7 @@ public class DNSResolverAPI {
 
 
     /**
-     * <p>Internal implementation that asynchronously resolves the domain names of the name servers for the given fully-qualified domain name (FQDN).  One of the given</p>
+     * <p>Internal implementation that asynchronously resolves the domain names of the name servers for the given fully-qualified domain name (FQDN).  One of the given
      * one of the given handlers with the result.  If handler1 is provided, it is used and no attachment will be provided to the handler.  Otherwise, handler2 will be used
      * and the given attachment will be provided to the handler.  At least one of the handlers <i>must</i> be provided.</p>
      * <p>Returns a "not ok" outcome if there was a problem initiating network operations to transmit the query to a DNS server.</p>
@@ -590,7 +590,7 @@ public class DNSResolverAPI {
 
     /**
      * <p>Synchronously resolve the {@link DNSResourceRecord}s of the given {@link DNSRRType} for the given fully-qualified domain name (FQDN), returning an
-     * {@link Outcome Outcome&lt;List&lt;DNSResourceRecord&gt;&gtl;} with the result.  Note that the type may be
+     * {@link Outcome Outcome&lt;List&lt;DNSResourceRecord&gt;&gt;} with the result.  Note that the type may be
      * {@link DNSRRType#ANY}, which will cause <i>all</i> resource records for the given FQDN to be resolved.</p>
      * <p>Returns a "not ok" outcome for any problem occurring during this operation.</p>
      * <p>Note that it is possible for the handler to be called with the results in the caller's thread, before this method returns.  This is especially the case for any query
@@ -599,7 +599,7 @@ public class DNSResolverAPI {
      *
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more DNS resource records.
      * @param _type The {@link DNSRRType} of resource records to resolve.
-     * @return The {@link Outcome Outcome&lt;List&lt;DNSResourceRecord&gt;&gtl;} result.
+     * @return The {@link Outcome Outcome&lt;List&lt;DNSResourceRecord&gt;&gt;} result.
      */
     public Outcome<List<DNSResourceRecord>> resolve( final String _fqdn, final DNSRRType _type ) {
 

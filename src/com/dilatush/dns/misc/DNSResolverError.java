@@ -1,5 +1,8 @@
 package com.dilatush.dns.misc;
 
+/**
+ * Enumerates all the sources of errors originating in the {@code com.dilatush.dns} package (as opposed to those originating in the DNS server).
+ */
 public enum DNSResolverError {
 
     /** Encountered a problem when trying to use the network. */
@@ -33,5 +36,5 @@ public enum DNSResolverError {
     INVALID_RESOURCE_RECORD_CLASS_CODE,
 
     /** Could not find IPs of any root servers */
-    NO_ROOT_SERVERS;
+    NO_ROOT_SERVERS
 }
