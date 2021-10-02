@@ -25,7 +25,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
-import static com.dilatush.dns.misc.IPVersion.*;
+import static com.dilatush.dns.misc.DNSIPVersion.*;
 import static com.dilatush.dns.message.DNSRRType.*;
 import static com.dilatush.dns.query.DNSQuery.QueryResult;
 import static com.dilatush.util.General.getLogger;
@@ -65,7 +65,7 @@ public class DNSResolver {
 
     private final ExecutorService               executor;
     private final DNSNIO                        nio;
-    private final IPVersion ipVersion;
+    private final DNSIPVersion                  ipVersion;
     private final List<ServerSpec>              serverSpecs;
     private final Map<String,ServerSpec>        serversByName;
     private final List<ServerSpec>              serversByPriority;
@@ -80,12 +80,13 @@ public class DNSResolver {
      * Creates a new instance of this class with the given parameters.
      *
      * @param _executor Specifies the executor that will be used to decode and process messages received from DNS servers.
+     * @param _ipVersion Specifies which IP versions will be used for name servers.
      * @param _serverSpecs Specifies the parameters for recursive DNS server agents that may be used by this resolver.
      * @param _maxCacheSize Specifies the maximum DNS resource record cache size.
      * @param _maxAllowableTTLMillis Specifies the maximum allowable TTL (in milliseconds) for a resource record in the cache.
      * @throws DNSResolverException if there is a problem instantiating {@link DNSNIO}.
      */
-    private DNSResolver( final ExecutorService _executor, final IPVersion _ipVersion, final List<ServerSpec> _serverSpecs,
+    private DNSResolver( final ExecutorService _executor, final DNSIPVersion _ipVersion, final List<ServerSpec> _serverSpecs,
                          final int _maxCacheSize, final long _maxAllowableTTLMillis ) throws DNSResolverException {
 
         executor      = _executor;
@@ -365,8 +366,8 @@ public class DNSResolver {
 
 
         private       ExecutorService      executor;
-        private final List<ServerSpec>    serverSpecs           = new ArrayList<>();
-        private       IPVersion            ipVersion             = IPv4;
+        private final List<ServerSpec>     serverSpecs           = new ArrayList<>();
+        private       DNSIPVersion         ipVersion             = IPv4;
         private       int                  maxCacheSize          = 1000;
         private       long                 maxAllowableTTLMillis = 2 * 3600 * 1000;  // two hours...
 
@@ -406,9 +407,9 @@ public class DNSResolver {
         /**
          * Specifies the versions of the Internet Protocol (IP) that the resolver will use.  The default is IP version 4 (IPv4) only.
          *
-         * @param _ipVersion The {@link IPVersion} that the resolver will use.
+         * @param _ipVersion The {@link DNSIPVersion} that the resolver will use.
          */
-        public void setIPVersion( final IPVersion _ipVersion ) {
+        public void setIPVersion( final DNSIPVersion _ipVersion ) {
             ipVersion = _ipVersion;
         }
 

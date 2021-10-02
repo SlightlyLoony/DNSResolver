@@ -21,5 +21,5 @@ public enum DNSServerSelectionStrategy {
     ROUND_ROBIN,
 
     /** Only a particular named agent is selected. */
-    NAMED;
+    NAMED
 }
