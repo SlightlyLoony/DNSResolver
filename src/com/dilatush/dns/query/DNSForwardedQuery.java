@@ -56,7 +56,8 @@ public class DNSForwardedQuery extends DNSQuery {
 
     /**
      * Initiates a query using the given transport (UDP or TCP).  Note that a call to this method may result in several messages to DNS servers and several responses from them.
-     * This may happen if a queried DNS server doesn't respond within the timeout time, or if the DNS server reports errors.
+     * This may happen if a queried DNS server doesn't respond within the timeout time, or if a series of DNS servers must be queried to get the answer to the question this
+     * query is trying to resolve.
      *
      * @param _initialTransport The initial transport (UDP or TCP) to use when resolving this query.
      * @return The {@link Outcome Outcome&lt;?&gt;} of this operation.
@@ -72,21 +73,28 @@ public class DNSForwardedQuery extends DNSQuery {
 
         // if we have no agents, then revert to a recursive query...
         if( serverSpecs.isEmpty() ) {
-            DNSQuery itQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, question, id, handler );
-            return itQuery.initiate( _initialTransport );
+            DNSQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, question, id, handler );
+            return recursiveQuery.initiate( _initialTransport );
         }
 
+        // we're set up; now it's time to actually go make the query...
         return query();
     }
 
 
     /**
      * Send the query to the DNS server, returning an {@link Outcome Outcome&lt;?&gt;} with the result.  Generally the outcome will be "not ok" only if there is some problem
-     * with the network or connection to a specific DNS server.
+     * with the network or connection to a specific DNS server.  This method may be called repeatedly during the resolution of a single query.  It is always called once when the
+     * query is initiated.  It may be called again if the queried DNS server fails to respond, or responds with an error, or (during a recursive query) to query for authorities
+     * and name server IP address resolution.
      *
      * @return The {@link Outcome Outcome&lt;?&gt;} result.
      */
     protected Outcome<?> query() {
+
+        // if we already had an agent running, shut it down...
+        if( agent != null )
+            agent.close();
 
         transport = initialTransport;
 
@@ -94,6 +102,7 @@ public class DNSForwardedQuery extends DNSQuery {
         agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
         LOGGER.finer( "forwarded query - ID: " + id + ", " + question.toString() + ", using " + agent.name );
 
+        // build the query message we need to send to the DNS server...
         DNSMessage.Builder builder = new DNSMessage.Builder();
         builder.setOpCode( DNSOpCode.QUERY );
         builder.setRecurse( true );

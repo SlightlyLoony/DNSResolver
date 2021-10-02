@@ -17,6 +17,9 @@ public enum DNSResolverError {
     /** Decoder buffer underflow. */
     DECODER_BUFFER_UNDERFLOW,
 
+    /** Message received on the wrong transport (TCP or UDP). */
+    RECEIVED_MESSAGE_ON_WRONG_TRANSPORT,
+
     /** Invalid domain name */
     INVALID_DOMAIN_NAME,
 

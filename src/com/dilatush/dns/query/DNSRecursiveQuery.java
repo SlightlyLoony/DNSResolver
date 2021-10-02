@@ -159,6 +159,10 @@ public class DNSRecursiveQuery extends DNSQuery {
      */
     protected Outcome<?> query() {
 
+        // if we already had an agent running, shut it down...
+        if( agent != null )
+            agent.close();
+
         transport = initialTransport;
 
         // figure out what agent we're going to use...
