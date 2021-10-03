@@ -8,15 +8,11 @@ import com.dilatush.dns.message.DNSResponseCode;
 import com.dilatush.dns.misc.DNSCache;
 import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.dns.misc.DNSServerException;
-import com.dilatush.dns.rr.A;
-import com.dilatush.dns.rr.AAAA;
-import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
 
-import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -24,7 +20,8 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static com.dilatush.dns.message.DNSResponseCode.*;
+import static com.dilatush.dns.message.DNSResponseCode.NAME_ERROR;
+import static com.dilatush.dns.message.DNSResponseCode.OK;
 import static com.dilatush.dns.misc.DNSResolverError.NETWORK;
 import static com.dilatush.dns.misc.DNSResolverError.RECEIVED_MESSAGE_ON_WRONG_TRANSPORT;
 import static com.dilatush.dns.query.DNSTransport.TCP;
@@ -338,26 +335,6 @@ public abstract class DNSQuery {
                         new QueryResult( queryMessage, null, queryLog )
                 )
         );
-    }
-
-
-    /**
-     * Add the name server IP addresses contained in any A (if IPv4 is being used) or AAAA (if IPv6 is being used) records in the given list of DNS resource records to the
-     * given list of IP addresses.
-     *
-     * @param _ips The list of IP addresses to append to.
-     * @param _rrs The list of DNS resource records to get IP addresses from.
-     */
-    protected void addIPs( final List<InetAddress> _ips, final List<DNSResourceRecord> _rrs ) {
-
-        Checks.required( _ips, _rrs );
-
-        _rrs.forEach( (rr) -> {                                    // for each resource record...
-            if( resolver.useIPv4() && (rr instanceof A) )          // if we're using IPv4, and we have an A record...
-                _ips.add( ((A)rr).address );                       // add the IPv4 address to the list...
-            else if( resolver.useIPv6() && (rr instanceof AAAA) )  // if we're using IPv6, and we have an AAAA record...
-                _ips.add( ((AAAA)rr).address );                    // add the IPv6 address to the list...
-        } );
     }
 
 

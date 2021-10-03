@@ -191,6 +191,8 @@ public class DNSResolver {
     }
 
 
+    // TODO: need to break up this logic, so we can do a pure cache search (without sending the results to the customer on success)...
+
     /**
      * Attempts to resolve the given question from the DNS cache, returns {@code true} if it resolved successfully.  To be resolved from the cache, the given {@link DNSQuestion}
      * must be for a discrete record type, not {@link DNSRRType#ANY} or {@link DNSRRType#UNIMPLEMENTED}.  There must be at least one result matching the question.  This method

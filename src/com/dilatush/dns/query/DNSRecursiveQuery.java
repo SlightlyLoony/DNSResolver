@@ -35,9 +35,9 @@ public class DNSRecursiveQuery extends DNSQuery {
     private static final Outcome.Forge<QueryResult> queryOutcome = new Outcome.Forge<>();
 
 
-    private final List<InetAddress>       nextIPs;     // IP addresses of the next name servers to query...
-    private final AtomicInteger           subQueries;  // the number of sub-queries currently running...
-    private final List<DNSResourceRecord> answers;     // the answers to this query...
+    private final List<InetAddress>       nextNameServerIPs;     // IP addresses of the next name servers to query...
+    private final AtomicInteger           subQueries;            // the number of sub-queries currently running...
+    private final List<DNSResourceRecord> answers;               // the answers to this query...
 
 
     /**
@@ -62,9 +62,9 @@ public class DNSRecursiveQuery extends DNSQuery {
                               final Consumer<Outcome<QueryResult>> _handler ) {
         super( _resolver, _cache, _nio, _executor, _activeQueries, _question, _id, new ArrayList<>(), _handler );
 
-        nextIPs    = new ArrayList<>();
-        subQueries = new AtomicInteger();
-        answers    = new ArrayList<>();
+        nextNameServerIPs = new ArrayList<>();
+        subQueries        = new AtomicInteger();
+        answers           = new ArrayList<>();
 
         queryLog.log("New recursive query " + question );
     }
@@ -72,8 +72,8 @@ public class DNSRecursiveQuery extends DNSQuery {
 
     /**
      * Initiates a query using the given transport (UDP or TCP).  Note that a call to this method may result in several messages to DNS servers and several responses from them.
-     * This may happen in the natural course of recursive resolution, if a CNAME chain needs to be resolved, if a queried DNS server doesn't respond within the timeout time, or
-     * if the DNS server reports errors.
+     * This may happen if a queried DNS server doesn't respond within the timeout time, or if a series of DNS servers must be queried to get the answer to the question this
+     * query is trying to resolve.
      *
      * @param _initialTransport The initial transport (UDP or TCP) to use when resolving this query.
      * @return The {@link Outcome Outcome&lt;?&gt;} of this operation.
@@ -87,6 +87,21 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         initialTransport = _initialTransport;
 
+        /*
+        ------------------------------------------------------------------------------------------------------------------------------------------------
+        | We can get here either through the DNSResolver (for the initial query), or through a sub-query initiated elsewhere in this class (to query for
+        | a name server IP address, or to follow a CNAME chain in the result).  However we get here, we know that the initial query could not be
+        | resolved from cache, so we're going to have to resolve it recursively.  We may have name servers for a parent domain, however -- we don't
+        | necessarily have to start with querying a root server.
+        |
+        | So the first thing we're going to do is to see if we have name servers in the cache for any of the parent domains of our query.  For example,
+        | if the original query was for "alpha.beta.gamma.com" A records, we're going to do the following cache searches (stopping when one succeeds):
+        |   "beta.gamma.com" for NS records
+        |   "gamma.com" for NS records
+        |   "com" for NS records
+        |   ...and finally, the root for NS records (that search will always succeed).
+        ------------------------------------------------------------------------------------------------------------------------------------------------
+        */
         // we need to figure out the starting nameservers, and make agents for them...
         // we know the actual question wasn't cached, as we wouldn't have queried at all if it was - so we start looking with its parent domain,
         // unless we're already at the root domain...
@@ -238,14 +253,14 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         // now check any IPs we got from the cache or in additional records, building a list of IPs for name servers, and a set of resolved name servers...
         Set<String> resolvedNameServers = new HashSet<>();
-        nextIPs.clear();
+        nextNameServerIPs.clear();
         nsInfo.forEach( (rr) -> {
             if( (rr instanceof A) || (rr instanceof AAAA) ) {
                 if( allNameServers.contains( rr.name.text ) ) {
                     if( resolver.useIPv4() && (rr instanceof A))
-                        nextIPs.add( ((A)rr).address );
+                        nextNameServerIPs.add( ((A)rr).address );
                     if( resolver.useIPv6() && (rr instanceof AAAA))
-                        nextIPs.add( ((AAAA)rr).address );
+                        nextNameServerIPs.add( ((AAAA)rr).address );
                     resolvedNameServers.add( rr.name.text );
                 }
             }
@@ -265,6 +280,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         // we DO have unresolved name servers, so blast out sub-queries to resolve them
 
+        // TODO: try to resolve from cache before firing off subqueries
         // send out the sub-queries...
         unresolvedNameServers.forEach( (unresolvedNameServer) -> {
 
@@ -427,6 +443,7 @@ public class DNSRecursiveQuery extends DNSQuery {
             return;
         }
 
+        // TODO: try to resolve from cache before firing off a subquery...
         // if we have one or more CNAME records and nothing else, check for a CNAME loop, then fire a sub-query to the last (unresolved) domain...
         if( aa.cnameCount == answers.size() ) {
 
@@ -487,7 +504,7 @@ public class DNSRecursiveQuery extends DNSQuery {
     private void startNextQuery() {
 
         // if we have no IPs to query, we've got a problem...
-        if( nextIPs.isEmpty() ) {
+        if( nextNameServerIPs.isEmpty() ) {
             handler.accept( queryOutcome.notOk( "Recursive query; no name server available for: " + question.qname.text, null,
                     new QueryResult( queryMessage, null, queryLog )) );
             activeQueries.remove( (short) id );
@@ -496,7 +513,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         // turn our IP addresses into agent parameters...
         serverSpecs.clear();
-        nextIPs.forEach( (ip) -> serverSpecs.add( new DNSResolver.ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
+        nextNameServerIPs.forEach( ( ip) -> serverSpecs.add( new DNSResolver.ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
 
         // figure out what agent we're going to use...
         agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
@@ -534,7 +551,7 @@ public class DNSRecursiveQuery extends DNSQuery {
             // if we got a good result, then add any IPs we got to the next IPs list...
             DNSMessage response = _outcome.info().response();
             if( _outcome.ok() && (response != null) )
-                addIPs( nextIPs, response.answers );
+                addIPs( nextNameServerIPs, response.answers );
 
             // whatever happened, log the sub-query...
             queryLog.log( "Name server resolution sub-query" );
@@ -546,6 +563,26 @@ public class DNSRecursiveQuery extends DNSQuery {
         LOGGER.fine( "Sub-query count: " + queryCount );
         if( queryCount == 0 )
             startNextQuery();
+    }
+
+
+    /**
+     * Add the name server IP addresses contained in any A (if IPv4 is being used) or AAAA (if IPv6 is being used) records in the given list of DNS resource records to the
+     * given list of IP addresses.
+     *
+     * @param _ips The list of IP addresses to append to.
+     * @param _rrs The list of DNS resource records to get IP addresses from.
+     */
+    private void addIPs( final List<InetAddress> _ips, final List<DNSResourceRecord> _rrs ) {
+
+        Checks.required( _ips, _rrs );
+
+        _rrs.forEach( (rr) -> {                                    // for each resource record...
+            if( resolver.useIPv4() && (rr instanceof A) )          // if we're using IPv4, and we have an A record...
+                _ips.add( ((A)rr).address );                       // add the IPv4 address to the list...
+            else if( resolver.useIPv6() && (rr instanceof AAAA) )  // if we're using IPv6, and we have an AAAA record...
+                _ips.add( ((AAAA)rr).address );                    // add the IPv6 address to the list...
+        } );
     }
 
 
