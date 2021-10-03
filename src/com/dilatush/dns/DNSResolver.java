@@ -1,6 +1,7 @@
 package com.dilatush.dns;
 
 // TODO: Handle responses with no answers (see RFC 2308)
+// TODO: make sure all "not ok" responses are using codes (DNSResponseCode or DNSResolverError)
 // TODO: Get rid of protected everywhere I can
 // TODO: Comments and Javadocs...
 

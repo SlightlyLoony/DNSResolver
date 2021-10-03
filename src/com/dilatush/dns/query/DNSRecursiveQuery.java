@@ -292,7 +292,7 @@ public class DNSRecursiveQuery extends DNSQuery {
     }
 
 
-    private record AnswersAnalysis( int cnameCount, int desiredCount, int wrongCount, boolean bogus ){};
+    private record AnswersAnalysis( int cnameCount, int desiredCount, int wrongCount, boolean bogus ){}
 
     private AnswersAnalysis analyzeAnswers() {
 
@@ -396,7 +396,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         // 3. There are two or more answers, consisting of one or more CNAME records followed by one or more answers of the desired type.  In this case, we check for proper
         //    CNAME chaining, accumulate all the answers, and we're done.
         // 4. There are one or more answers, all of which are CNAME records.  In this case, the last CNAME is a referral, we accumulate all the answers, check for a CNAME
-        //    loop (which is an error, and then fire off a sub-query to resolve the referral.  The results of the sub-query are evaluated exactly as the results of the
+        //    loop (which is an error), and then fire off a sub-query to resolve the referral.  The results of the sub-query are evaluated exactly as the results of the
         //    first query.
         // 5. There are one or more answers which are neither CNAME records nor the desired type.  This is an error.
 
@@ -427,7 +427,7 @@ public class DNSRecursiveQuery extends DNSQuery {
             return;
         }
 
-        // if have one or more CNAME records and nothing else, check for a CNAME loop, then fire a sub-query to the last (unresolved) domain...
+        // if we have one or more CNAME records and nothing else, check for a CNAME loop, then fire a sub-query to the last (unresolved) domain...
         if( aa.cnameCount == answers.size() ) {
 
             // if we have a CNAME loop, that's a fatal error...

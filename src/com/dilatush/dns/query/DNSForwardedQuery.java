@@ -1,20 +1,23 @@
 package com.dilatush.dns.query;
 
+import com.dilatush.dns.DNSResolver;
+import com.dilatush.dns.DNSResolver.ServerSpec;
+import com.dilatush.dns.message.DNSMessage;
+import com.dilatush.dns.message.DNSOpCode;
+import com.dilatush.dns.message.DNSQuestion;
+import com.dilatush.dns.misc.DNSCache;
+import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
-import com.dilatush.dns.DNSResolver;
-import com.dilatush.dns.DNSResolver.ServerSpec;
-import com.dilatush.dns.misc.DNSCache;
-import com.dilatush.dns.message.DNSMessage;
-import com.dilatush.dns.message.DNSOpCode;
-import com.dilatush.dns.message.DNSQuestion;
 
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
+
+import static com.dilatush.dns.misc.DNSResolverError.NETWORK;
 
 /**
  * Instances of this class contain the elements and state of a forwarded DNS query, and provide methods that implement the resolution of that query.
@@ -108,16 +111,16 @@ public class DNSForwardedQuery extends DNSQuery {
         builder.setRecurse( true );
         builder.setId( id & 0xFFFF );
         builder.addQuestion( question );
-
         queryMessage = builder.getMessage();
 
         queryLog.log("Sending forwarded query to " + agent.name + " via " + transport );
 
+        // now actually send that query...
         Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
 
         return sendOutcome.ok()
                 ? queryOutcome.ok()
-                : queryOutcome.notOk( sendOutcome.msg(), sendOutcome.cause() );
+                : queryOutcome.notOk( sendOutcome.msg(), new DNSResolverException( "Problem sending message", sendOutcome.cause(), NETWORK ) );
     }
 
 
@@ -133,6 +136,11 @@ public class DNSForwardedQuery extends DNSQuery {
     }
 
 
+    /**
+     * Returns a string representation of this instance.
+     *
+     * @return A string representation of this instance.
+     */
     public String toString() {
         return "DNSQuery: " + responseMessage.answers.size() + " answers";
     }
