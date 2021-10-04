@@ -274,16 +274,17 @@ public class DNSMessage {
 
         // decode the 16-bits of flags and codes, from the MSB on down...
         int flags = 0xFFFF & _msgBuffer.getShort();
-        builder.setResponse(                  (flags & 0x8000) != 0 );
-        builder.setOpCode(                    DNSOpCode.fromCode( 0x0F & (flags >> 11) ) );
-        builder.setAuthoritativeAnswer(       (flags & 0x0400) != 0 );
-        builder.setTruncated(                 (flags & 0x0200) != 0 );
-        builder.setRecurse(                   (flags & 0x0100) != 0 );
-        builder.setCanRecurse(                (flags & 0x0080) != 0 );
-        builder.setZ(                         (flags & 0x0040) != 0 );
-        builder.setAuthenticated(             (flags & 0x0020) != 0 );
-        builder.setCheckingDisabled(          (flags & 0x0010) != 0 );
-        builder.setResponseCode(              DNSResponseCode.fromCode( flags & 0x0F ) );
+        builder
+            .setResponse(                  (flags & 0x8000) != 0                      )
+            .setOpCode(                    DNSOpCode.fromCode( 0x0F & (flags >> 11) ) )
+            .setAuthoritativeAnswer(       (flags & 0x0400) != 0                      )
+            .setTruncated(                 (flags & 0x0200) != 0                      )
+            .setRecurse(                   (flags & 0x0100) != 0                      )
+            .setCanRecurse(                (flags & 0x0080) != 0                      )
+            .setZ(                         (flags & 0x0040) != 0                      )
+            .setAuthenticated(             (flags & 0x0020) != 0                      )
+            .setCheckingDisabled(          (flags & 0x0010) != 0                      )
+            .setResponseCode(              DNSResponseCode.fromCode( flags & 0x0F )   );
 
         // decode the four 16-bit question and resource record counts...
         int quc = 0xFFFF & _msgBuffer.getShort();
@@ -393,6 +394,7 @@ public class DNSMessage {
      * Instances of this class are used to build instances of {@link DNSMessage}.  Instances of this class are mutable and are
      * <i>not</i> threadsafe.
      */
+    @SuppressWarnings( "UnusedReturnValue" )
     public static class Builder {
 
         private       int                     id;                     // 16-bit integer ID supplied by application...
@@ -484,9 +486,11 @@ public class DNSMessage {
          * Set the ID to the given value (default is zero).
          *
          * @param _id The value to set the ID to.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setId( final int _id ) {
+        public Builder setId( final int _id ) {
             id = _id;
+            return this;
         }
 
 
@@ -494,9 +498,11 @@ public class DNSMessage {
          * Set the response/query flag ({@code true} for a response, {@code false} for a query; default is {@code false} for query).
          *
          * @param _response The response/query flag.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setResponse( final boolean _response ) {
+        public Builder setResponse( final boolean _response ) {
             isResponse = _response;
+            return this;
         }
 
 
@@ -504,9 +510,11 @@ public class DNSMessage {
          * Set the {@link DNSOpCode} for this message (default is {@link DNSOpCode#QUERY}).
          *
          * @param _opCode The {@link DNSOpCode}.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setOpCode( final DNSOpCode _opCode ) {
+        public Builder setOpCode( final DNSOpCode _opCode ) {
             opCode = _opCode;
+            return this;
         }
 
 
@@ -514,9 +522,11 @@ public class DNSMessage {
          * Set the authoritative answer flag ({@code true} for a response with an authoritative answer; default is {@code false}).
          *
          * @param _authoritativeAnswer The authoritative answer flag.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setAuthoritativeAnswer( final boolean _authoritativeAnswer ) {
+        public Builder setAuthoritativeAnswer( final boolean _authoritativeAnswer ) {
             authoritativeAnswer = _authoritativeAnswer;
+            return this;
         }
 
 
@@ -524,9 +534,11 @@ public class DNSMessage {
          * Set the truncated message flag ({@code true} for a response that has been truncated; default is {@code false}).
          *
          * @param _truncated The truncated message flag.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setTruncated( final boolean _truncated ) {
+        public Builder setTruncated( final boolean _truncated ) {
             truncated = _truncated;
+            return this;
         }
 
 
@@ -534,9 +546,11 @@ public class DNSMessage {
          * Set the recurse flag ({@code true} in a query when recursive resolution is wanted, which is usually the case; default is {@code false}).
          *
          * @param _recurse The recurse flag.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setRecurse( final boolean _recurse ) {
+        public Builder setRecurse( final boolean _recurse ) {
             recurse = _recurse;
+            return this;
         }
 
 
@@ -544,9 +558,11 @@ public class DNSMessage {
          * In a response, set the "can recurse" flag ({@code true} if the server can resolve recursively; default is {@code false}).
          *
          * @param _canRecurse The "can recurse" flag.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setCanRecurse( final boolean _canRecurse ) {
+        public Builder setCanRecurse( final boolean _canRecurse ) {
             canRecurse = _canRecurse;
+            return this;
         }
 
 
@@ -555,9 +571,11 @@ public class DNSMessage {
          * {@code false}.
          *
          * @param _z The "z" flag.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setZ( final boolean _z ) {
+        public Builder setZ( final boolean _z ) {
             z = _z;
+            return this;
         }
 
 
@@ -565,9 +583,11 @@ public class DNSMessage {
          * In a response, set the authenticated flag ({@code true} if the answers and authorities are authenticated; default is {@code false}).
          *
          * @param _authenticated The authenticated flag.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setAuthenticated( final boolean _authenticated ) {
+        public Builder setAuthenticated( final boolean _authenticated ) {
             authenticated = _authenticated;
+            return this;
         }
 
 
@@ -576,9 +596,11 @@ public class DNSMessage {
          * is {@code false}).
          *
          * @param _checkingDisabled The checking disabled flag.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setCheckingDisabled( final boolean _checkingDisabled ) {
+        public Builder setCheckingDisabled( final boolean _checkingDisabled ) {
             checkingDisabled = _checkingDisabled;
+            return this;
         }
 
 
@@ -586,9 +608,11 @@ public class DNSMessage {
          * In a response, set the {@link DNSResponseCode} (default is {@link DNSResponseCode#OK}).
          *
          * @param _responseCode The DNS response code.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setResponseCode( final DNSResponseCode _responseCode ) {
+        public Builder setResponseCode( final DNSResponseCode _responseCode ) {
             responseCode = _responseCode;
+            return this;
         }
     }
 }

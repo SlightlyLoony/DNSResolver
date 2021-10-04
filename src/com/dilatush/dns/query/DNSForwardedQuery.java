@@ -107,10 +107,11 @@ public class DNSForwardedQuery extends DNSQuery {
 
         // build the query message we need to send to the DNS server...
         DNSMessage.Builder builder = new DNSMessage.Builder();
-        builder.setOpCode( DNSOpCode.QUERY );
-        builder.setRecurse( true );
-        builder.setId( id & 0xFFFF );
-        builder.addQuestion( question );
+        builder
+            .setOpCode(   DNSOpCode.QUERY )
+            .setRecurse(  true            )
+            .setId(       id & 0xFFFF     )
+            .addQuestion( question );
         queryMessage = builder.getMessage();
 
         queryLog.log("Sending forwarded query to " + agent.name + " via " + transport );

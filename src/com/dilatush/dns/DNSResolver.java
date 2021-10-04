@@ -264,9 +264,10 @@ public class DNSResolver {
         // first our query message...
         DNSMessage.Builder builder = new DNSMessage.Builder();
         builder.addQuestion( _question );
-        builder.setOpCode( DNSOpCode.QUERY );
-        builder.setRecurse( true );
-        builder.setCanRecurse( true );
+        builder
+            .setOpCode(     DNSOpCode.QUERY )
+            .setRecurse(    true            )
+            .setCanRecurse( true            );
         DNSMessage query = builder.getMessage();
 
         // then our response message...
@@ -401,9 +402,11 @@ public class DNSResolver {
          * Specifies the executor that will be used to decode and process messages received from DNS servers.  The default is a single-threaded executor.
          *
          * @param _executor The executor to use when decoding and processing messages received from DNS servers.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setExecutor( final ExecutorService _executor ) {
+        public Builder setExecutor( final ExecutorService _executor ) {
             executor = _executor;
+            return this;
         }
 
 
@@ -411,9 +414,11 @@ public class DNSResolver {
          * Specifies the versions of the Internet Protocol (IP) that the resolver will use.  The default is IP version 4 (IPv4) only.
          *
          * @param _ipVersion The {@link DNSIPVersion} that the resolver will use.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setIPVersion( final DNSIPVersion _ipVersion ) {
+        public Builder setIPVersion( final DNSIPVersion _ipVersion ) {
             ipVersion = _ipVersion;
+            return this;
         }
 
 
@@ -421,10 +426,11 @@ public class DNSResolver {
          * Specifies the maximum DNS resource record cache size.  The default is 1,000 resource records.
          *
          * @param _maxCacheSize The maximum DNS resource record cache size.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setMaxCacheSize( final int _maxCacheSize ) {
-
+        public Builder setMaxCacheSize( final int _maxCacheSize ) {
             maxCacheSize = _maxCacheSize;
+            return this;
         }
 
 
@@ -432,10 +438,11 @@ public class DNSResolver {
          * Specifies the maximum allowable TTL (in milliseconds) for a resource record in the cache.  The default is two hours.
          *
          * @param _maxAllowableTTLMillis  the maximum allowable TTL for a resource record in the cache.
+         * @return This {@link Builder}, as a convenience for setter chaining.
          */
-        public void setMaxAllowableTTLMillis( final long _maxAllowableTTLMillis ) {
-
+        public Builder setMaxAllowableTTLMillis( final long _maxAllowableTTLMillis ) {
             maxAllowableTTLMillis = _maxAllowableTTLMillis;
+            return this;
         }
 
 

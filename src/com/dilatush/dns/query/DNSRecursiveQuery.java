@@ -186,10 +186,11 @@ public class DNSRecursiveQuery extends DNSQuery {
         LOGGER.finer( "Recursive query - ID: " + id + ", " + question.toString() + ", using " + agent.name );
 
         DNSMessage.Builder builder = new DNSMessage.Builder();
-        builder.setOpCode( DNSOpCode.QUERY );
-        builder.setRecurse( false );
-        builder.setId( id & 0xFFFF );
-        builder.addQuestion( question );
+        builder
+            .setOpCode(   DNSOpCode.QUERY )
+            .setRecurse(  false           )
+            .setId(       id & 0xFFFF     )
+            .addQuestion( question );
 
         queryMessage = builder.getMessage();
 

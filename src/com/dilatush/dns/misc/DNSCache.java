@@ -12,6 +12,10 @@ import java.util.logging.Logger;
 
 import static java.util.logging.Level.FINE;
 
+// TODO: add reference to root hints
+// TODO: have minimum cache size; eliminate cache-disabled checks
+// TODO: add method to resolve CNAME chains
+// TODO: add method that takes a query message and produces a response message
 
 /**
  * <p>Instances of this class implement a cache for DNS resource records for fully-qualified domain names (FQDNs).  The cache has a fixed limit on the number of resource records
