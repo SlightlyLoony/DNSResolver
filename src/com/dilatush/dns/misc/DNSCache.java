@@ -1,19 +1,25 @@
 package com.dilatush.dns.misc;
 
-import com.dilatush.dns.message.DNSDomainName;
+import com.dilatush.dns.message.*;
 import com.dilatush.dns.rr.DNSResourceRecord;
+import com.dilatush.dns.rr.NS;
 import com.dilatush.dns.rr.UNIMPLEMENTED;
 import com.dilatush.util.Checks;
 import com.dilatush.util.General;
+import com.dilatush.util.Outcome;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
+import static com.dilatush.dns.message.DNSRRType.*;
+import static com.dilatush.dns.message.DNSResponseCode.*;
+import static com.dilatush.dns.misc.DNSUtil.filterResourceRecords;
 import static java.util.logging.Level.FINE;
+import static java.util.logging.Level.SEVERE;
 
 // TODO: add reference to root hints
-// TODO: have minimum cache size; eliminate cache-disabled checks
 // TODO: add method to resolve CNAME chains
 // TODO: add method that takes a query message and produces a response message
 
@@ -33,12 +39,14 @@ public class DNSCache {
 
     private static final Logger LOGGER = General.getLogger();
 
-    private static final int  DEFAULT_MAX_CACHE_SIZE           = 1000;
+    private static final int  MIN_CACHE_SIZE                   = 1000;
+    private static final int  DEFAULT_MAX_CACHE_SIZE           = 5000;
     private static final long DEFAULT_MAX_ALLOWABLE_TTL_MILLIS = 2 * 60 * 60 * 1000;  // 2 hours...
 
     private        final int          maxCacheSize;           // the maximum number of resource records that this cache may contain...
     private        final long         maxAllowableTTLMillis;  // the maximum (longest) time-to-live (TTL) that any resource record in the cache is allowed to have...
     private        final AtomicLong   uniqueInteger;          // differentiates ttlMap entries (see below) that have the same expiration time...
+    private        final DNSRootHints rootHints;              // the root hints manager we'll use for recursive resolution...
 
     /****************************************************************************************************************************************************
      * The two maps below are the key data structures for the cache.
@@ -64,36 +72,180 @@ public class DNSCache {
      * <p>Creates a new instance of this class using the given arguments:</p>
      * <ul>
      *     <li>_maxCacheSize - the maximum number of DNS resource records that may be stored in this cache.  If adding a record would cause the cache to exceed this size, the
-     *     resource record closest to expiration is removed before adding the new resource record, thus capping the cache's size.  Any value less than 1 disables the cache.</li>
+     *     resource record closest to expiration is removed before adding the new resource record, thus capping the cache's size.  The minimum cache size is 1,000 resource
+     *     records.  Any attempt to set a cache size smaller than that is silently changed to 1,000 resource records.</li>
      *     <li>_maxAllowableTTLMillis - the maximum time, in milliseconds, that a resource record may remain cached - no matter what the TTL on the resource record is.  To
      *     prevent capping the TTL, set this value to {@link Long#MAX_VALUE}.  Values must be greater than zero.</li>
      * </ul>
      *
      * @param _maxCacheSize The maximum number of DNS resource records that may be stored in this cache.
      * @param _maxAllowableTTLMillis The maximum time, in milliseconds, that any resource record is allowed to exist before expiring.
+     * @param _rootHints The {@link DNSRootHints} manager to use for recursive resolution.
      */
-    public DNSCache( final int _maxCacheSize, final long _maxAllowableTTLMillis ) {
+    public DNSCache( final int _maxCacheSize, final long _maxAllowableTTLMillis, final DNSRootHints _rootHints ) {
+
+        Checks.required( _rootHints );
 
         // sanity check...
         if( _maxAllowableTTLMillis < 1 )
             throw new IllegalArgumentException( "Invalid max allowable timeout: " + _maxAllowableTTLMillis );
 
         maxCacheSize          = _maxCacheSize;
-        maxAllowableTTLMillis = _maxAllowableTTLMillis;
+        maxAllowableTTLMillis = Math.max( MIN_CACHE_SIZE, _maxAllowableTTLMillis );
         entryMap              = new HashMap<>( maxCacheSize );
         ttlMap                = new TreeMap<>();
         uniqueInteger         = new AtomicLong();
+        rootHints             = _rootHints;
 
         LOGGER.log( FINE, "Created DNSCache, max size " + maxCacheSize + " DNS resource records" );
     }
 
 
     /**
-     * Creates a new instance of this class with a maximum of 1,000 cached resource records and a maximum allowable TTL of two hours.
+     * Creates a new instance of this class with a maximum of 5,000 cached resource records, a maximum allowable TTL of two hours, and a default {@link DNSRootHints} instance.
      */
     @SuppressWarnings( "unused" )
     public DNSCache() {
-        this( DEFAULT_MAX_CACHE_SIZE, DEFAULT_MAX_ALLOWABLE_TTL_MILLIS );
+        this( DEFAULT_MAX_CACHE_SIZE, DEFAULT_MAX_ALLOWABLE_TTL_MILLIS, new DNSRootHints() );
+    }
+
+
+    /**
+     * Attempts to resolve the given query message, and returns the result in a synthetic response message.  Failure to resolve from the cache is indicated by a response code of
+     * {@link DNSResponseCode#NAME_ERROR}.  The intent of this method is to provide results from the cache, if possible, that closely resemble the results of the same query
+     * message sent to a DNS server.  The results are quite different depending on whether the query message requests recursion:
+     * <ul>
+     *     <li>Recursion requested: The cache is searched for the answers to the question contained in the query.  If the cache contains an answer to the question in the query
+     *     (including resolving any CNAME chain), then the response code is {@link DNSResponseCode#OK} and the answers contain the resource records found.  Otherwise, the
+     *     response code is {@link DNSResponseCode#NAME_ERROR} and no resource records are returned.</li>
+     *     <li>No recursion requested: First the cache is searched for the answers to the question contained in the query.  If the cache contains an answer to the question in
+     *     the query (including resolving any CNAME chain), then the response code is {@link DNSResponseCode#OK} and the answers contain the resource records found.  Otherwise,
+     *     the cache is searched for the most specific name server entries it can find.  At worst case, this will be the root name servers (from the root hints file).  If the
+     *     cache has more specific name server entries, they will be used.  For example, if the original question was for A records from "www.bogus.com", and the cache had
+     *     no such records, first it will search for name servers for "bogus.com", then for "com", and only if both of those have no results will it return the root name
+     *     servers.  In all cases, the response code will be {@link DNSResponseCode#OK}, there will be no answers, the name servers found will be in the authorities, and if
+     *     the IP addresses of the name servers are in the cache, they will be in the additional records.</li>
+     * </ul>
+     * Note that if the query is somehow malformed, the response code will be {@link DNSResponseCode#FORMAT_ERROR}, and there will be no answers, authorities, or additional
+     * records.
+     *
+     * @param _queryMessage The {@link DNSMessage} containing the query to be resolved (if possible) from the cache.
+     * @return The {@link DNSMessage} containing the result of the attempted resolution from cache.
+     */
+    public DNSMessage resolve( final DNSMessage _queryMessage ) {
+
+        Checks.required( _queryMessage );
+
+        // if the query message isn't a valid query, return a FORMAT_ERROR...
+        if( _queryMessage.isResponse || (_queryMessage.questions.size() == 0) || (_queryMessage.getQuestion().qtype == DNSRRType.UNIMPLEMENTED) )
+            return _queryMessage.getSyntheticNotOKResponse( FORMAT_ERROR );
+
+        // if the query is for type ANY, we'll fail, because we can't tell if the cache has all records...
+        if( _queryMessage.getQuestion().qtype == ANY )
+            return _queryMessage.getSyntheticNotOKResponse( NAME_ERROR );
+
+        // if we can resolve this query from the cache, return the response with all the answers...
+        List<DNSResourceRecord> answers = resolveAnswers( _queryMessage.getQuestion() );
+        if( answers.size() > 0 )
+            return _queryMessage.getSyntheticOKResponse( answers );
+
+        // since we don't have any answers, if the query requested recursion, we leave with a NAME_ERROR...
+        if( _queryMessage.recurse )
+            return _queryMessage.getSyntheticNotOKResponse( NAME_ERROR );
+
+        // if we get here, then we're answering without recursion, and we couldn't directly resolve the query - time to look for name servers...
+        DNSDomainName nsSearchDomain = _queryMessage.getQuestion().qname.parent();
+        List<DNSResourceRecord> nameServers;
+        do {
+            nameServers = resolveAnswers( new DNSQuestion( nsSearchDomain, NS ) );
+            if( nsSearchDomain.isRoot() && (nameServers.size() == 0) ) {
+                if( !updateRootHints() )
+                    return _queryMessage.getSyntheticNotOKResponse( SERVER_FAILURE );
+            }
+            else
+                nsSearchDomain = nsSearchDomain.parent();
+        } while( nameServers.size() == 0 );
+
+        // if we get here, we have at least one name server, and possibly some CNAME records - filter them out...
+        nameServers = nameServers.stream().filter( (rr) -> rr.type == NS ).collect( Collectors.toList());
+
+        // let's see if we have cached IP addresses for those name servers...
+        List<DNSResourceRecord> nameServersIPs = new ArrayList<>();
+        nameServers.forEach( (ns) -> {
+            DNSDomainName nsdn = ((com.dilatush.dns.rr.NS)ns).nameServer;
+
+        } );
+    }
+
+
+    private boolean updateRootHints() {
+        Outcome<List<DNSResourceRecord>> rho = rootHints.current();
+        if( rho.notOk() ) {
+            LOGGER.log( SEVERE, "Cannot get current root hints: " + rho.msg(), rho.cause() );
+            return false;
+        }
+        add( rho.info() );
+        return true;
+    }
+
+
+    /**
+     * Attempt to find answers in the cache for the given question, including resolving any CNAME chain.  If answers are found, the returned list of resource records contains
+     * them (including any CNAME chain).  Otherwise, an empty list is returned.
+     *
+     * @param _question The question to be resolved from cache.
+     * @return The answers found in the cache, which may be none.
+     */
+    public List<DNSResourceRecord> resolveAnswers( final DNSQuestion _question ) {
+
+        Checks.required( _question );
+
+        // make a place to stuff our answers...
+        List<DNSResourceRecord> answers = new ArrayList<>();
+
+        // get anything the cache might have from the domain we're looking for...
+        List<DNSResourceRecord> cached = get( _question.qname );
+
+        // if we got nothing at all back, bail out negatively...
+        if( cached.size() == 0 )
+            return answers;
+
+        // iterate over the cached records to see if any of them match what we're looking for, or match a CNAME that might point to what we need...
+        cached.forEach( (rr) -> {
+
+            // if the cached record matches the class and type in the question, stuff it directly into the answers...
+            if( (rr.klass == _question.qclass) && (rr.type == _question.qtype) )
+                answers.add( rr );
+
+            // if it's a CNAME, and it's the only record we got, then we need to resolve the chain (which could be arbitrarily long)...
+            // (if there's a CNAME, the DNS RFCs call for it to be the ONLY resource record with that FQDN)...
+            else if( (rr.type == CNAME) && (cached.size() == 1) ) {
+
+                // follow the CNAME chain to its end, recording the CNAMEs into the cname chain...
+                List<DNSResourceRecord> cnameChain = new ArrayList<>();            // a place to store our chain of CNAMEs...
+                List<DNSResourceRecord> chainCache = new ArrayList<>( cached );    // the cached results as we follow the chain...
+
+                // so long as what we found is a valid CNAME chain element, add it to our CNAME chain and move to the next element...
+                while( (chainCache.size() == 1) && (chainCache.get(0).type == CNAME) ) {
+                    cnameChain.add( chainCache.get( 0 ) );
+                    com.dilatush.dns.rr.CNAME cnameRR = (com.dilatush.dns.rr.CNAME)chainCache.get( 0 );
+                    chainCache = get( cnameRR.cname );
+                }
+
+                // at this point, the CNAME chain contains 1 or more CNAME records, and the chain cache contains a different kind of record, or no record -
+                // so now we see if the chain cache has any of the kinds of records we actually want, and if so we add them to the CNAME chain...
+                int startSize = cnameChain.size();   // remember how big the CNAME chain was before we started...
+                chainCache.stream()
+                        .filter(  (arr) -> (arr.klass == _question.qclass) && (arr.type == _question.qtype) )
+                        .forEach( cnameChain::add );
+
+                // if we got at least one of the record type we actually want, then dump the CNAME chain into our answers...
+                if( startSize < (cnameChain).size() )
+                    answers.addAll( cnameChain );
+            }
+        } );
+
+        return answers;
     }
 
 
@@ -115,10 +267,6 @@ public class DNSCache {
     public synchronized void add( final DNSResourceRecord _rr, final long _expires ) {
 
         Checks.required( _rr );
-
-        // if the cache is disabled (max size < 1), just leave...
-        if( maxCacheSize < 1 )
-            return;
 
         // if the TTL on the given record is zero, we're not going to cache it...
         if( _rr.ttl == 0 )
@@ -265,10 +413,6 @@ public class DNSCache {
 
         Checks.required( _dn );
 
-        // if the cache is disabled, just leave with an empty list...
-        if( maxCacheSize < 1 )
-            return new ArrayList<>( 0 );
-
         // get the entries for this FQDN, or null if there are none...
         DNSCacheEntry[] entries = entryMap.get( _dn.toLowerCase() );
 
@@ -312,6 +456,37 @@ public class DNSCache {
      */
     public List<DNSResourceRecord> get( final DNSDomainName _dn ) {
         return get( _dn.text );
+    }
+
+
+    /**
+     * Returns a list of all the unexpired {@link DNSResourceRecord}s held in this cache for the given domain name whose record type matches one of the given types.
+     * If the cache holds no matching records, then an empty list is returned.
+     *
+     * @param _dn The domain name to retrieve resource records for.
+     * @param _types The types of resource records wanted.
+     * @return The (possibly empty) list of retrieved records.
+     */
+    public List<DNSResourceRecord> get( final String _dn, DNSRRType... _types ) {
+
+        Checks.required( _dn, _types );
+
+        return filterResourceRecords( get( _dn ), _types );
+    }
+
+
+    /**
+     * Returns a list of all the unexpired {@link DNSResourceRecord}s held in this cache for the given {@link DNSDomainName} whose record type matches one of the given types.
+     * If the cache holds no matching records, then an empty list is returned.
+     *
+     * @param _dn The {@link DNSDomainName} to retrieve resource records for.
+     * @param _types The types of resource records wanted.
+     * @return The (possibly empty) list of retrieved records.
+     */
+    public List<DNSResourceRecord> get( final DNSDomainName _dn, DNSRRType... _types ) {
+
+        Checks.required( _dn, _types );
+        return get( _dn.text, _types );
     }
 
 

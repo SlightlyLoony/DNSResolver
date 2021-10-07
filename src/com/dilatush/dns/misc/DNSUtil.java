@@ -13,12 +13,14 @@ import java.net.Inet6Address;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Static container class for functions related to DNS.
  *
  * @author Tom Dilatush  tom@dilatush.com
  */
+@SuppressWarnings( "unused" )
 public class DNSUtil {
 
     private static final Outcome.Forge<DNSQuestion> outcomeQuestion = new Outcome.Forge<>();
@@ -65,6 +67,35 @@ public class DNSUtil {
         catch( UnknownHostException _e ) {
             throw new IllegalStateException( "IP address was wrong length" );
         }
+    }
+
+
+    /**
+     * The given list of resource is normally the result of a DNS query (or cache query), and may include a CNAME chain.  This method first filters that list to get only the
+     * {@link DNSResourceRecord}s with the given {@link DNSRRType}s.  Those matching resource records are then transformed (if necessary) to ensure that each resource record's
+     * name (a {@link DNSDomainName} is the same as the domain name originally queried.  The originally queried name is taken from the first resource record in the given list.
+     * For example, if the given list of resource records had the following:
+     * <pre>
+     *     x.y.com CNAME a.b.com
+     *     a.b.com A 10.4.82.188</pre>
+     * Then result of calling this method (specifying A records) would be:
+     * <pre>
+     *     x.y.com A 10.4.82.188</pre>
+     * In addition, the IP address (in A and AAAA records) will have its host name set to the original domain name.
+     *
+     * @param _rrs The {@link DNSResourceRecord}s to normalize.
+     * @param _types The {@link DNSRRType}s of records to include in the returned list.
+     * @return The list of normalized resource records.
+     */
+    public static List<DNSResourceRecord> normalizeResourceRecords( final List<DNSResourceRecord> _rrs, final DNSRRType... _types ) {
+
+        Checks.required( _rrs, _types );
+
+        // if someone gave us an empty list, just return it...
+        if( _rrs.size() == 0 )
+            return _rrs;
+
+        // save the originally queried domain name, which will be the domain name of the first resource record in the given list, even if it's a CNAME...
     }
 
 
@@ -145,6 +176,31 @@ public class DNSUtil {
                 .filter( (rr) -> rr instanceof NS )                            // look at just the NS records...
                 .forEach( ( rr) -> result.add( ((NS)rr).nameServer.text ) );   // add the domain name of the name server to our results...
         return result;
+    }
+
+
+    /**
+     * Returns a (possibly empty) list of the given resource records that have not expired, and that are one of the given resource record types.
+     *
+     * @param _rrs The {@link DNSResourceRecord}s to filter.
+     * @param _types The {@link DNSRRType}(s) to filter for.
+     * @return A (possibly empty) list of the given resource records that have not expired, and that are one of the given resource record types.
+     */
+    public static List<DNSResourceRecord> filterResourceRecords( final List<DNSResourceRecord> _rrs, DNSRRType... _types ) {
+
+        Checks.required( _rrs, _types );
+
+        long now = System.currentTimeMillis();                   // we'll make this call just once...
+        return _rrs.stream()
+                .filter( (rr) -> rr.expirationMillis() > now )   // we only want unexpired records...
+                .filter( (rr) -> {
+                    for( DNSRRType type : _types ) {
+                        if( type == rr.type )
+                            return true;
+                    }
+                    return false;
+                })
+                .collect( Collectors.toList());
     }
 
 

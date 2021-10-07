@@ -339,7 +339,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
     private void doneWithAnswers() {
         queryLog.log( "Got viable answers" );
-        responseMessage = queryMessage.getSyntheticResponse( answers );
+        responseMessage = queryMessage.getSyntheticOKResponse( answers );
         handler.accept( queryOutcome.ok( new QueryResult( queryMessage, responseMessage, queryLog )) );
         activeQueries.remove( (short) id );
     }

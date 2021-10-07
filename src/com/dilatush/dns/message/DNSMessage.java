@@ -64,7 +64,7 @@ public class DNSMessage {
     /** In a response, this field indicates whether the response was ok, or had a problem. */
     public final DNSResponseCode         responseCode;           // valid in responses only; ok or type of error...
 
-    /** In a query, the questions to ask the server.  These questions are copied to the server's response. */
+    /** In a query, the questions to ask the server (normally just one).  These questions are copied to the server's response. */
     public final List<DNSQuestion>       questions;              // the questions in this message...
 
     /** In a response, the resource record answers to the questions asked in the query. */
@@ -79,7 +79,7 @@ public class DNSMessage {
 
     /**
      * Creates a new instance of this class with the given parameters.  Note that this constructor is private, and is used only by {@link Builder} and
-     * {@link #getSyntheticResponse}.
+     * {@link #getSyntheticOKResponse}.
      *
      * @param _id The 16-bit unsigned integer ID supplied the application creating the message.
      * @param _isResponse {@code true} if this message is a response, {@code false} if it is a query.
@@ -123,12 +123,24 @@ public class DNSMessage {
 
 
     /**
+     * Returns the first (and normally the only) question.
+     *
+     * @return The first {@link DNSQuestion} in the message, or {@code null} if there are none.
+     */
+    public DNSQuestion getQuestion() {
+        return (questions.size() == 0)
+                ? null
+                : questions.get( 0 );
+    }
+
+
+    /**
      * Synthesizes a response message with the given answers based on this message, which must be a query.
      *
      * @param _answers The answers for this response message.
      * @return The synthetic response message.
      */
-    public DNSMessage getSyntheticResponse( final List<DNSResourceRecord> _answers ) {
+    public DNSMessage getSyntheticOKResponse( final List<DNSResourceRecord> _answers ) {
 
         if( isResponse || (opCode != DNSOpCode.QUERY) )
             throw new UnsupportedOperationException( "Can synthesize responses only for query messages" );
@@ -149,6 +161,39 @@ public class DNSMessage {
                 DNSResponseCode.OK,   // cached responses are by definition ok...
                 questions,            // copy the questions (always just one) from the query to the response...
                 _answers,             // the answers we're synthesizing a response for...
+                new ArrayList<>(0),   // our synthetic response has no authorities...
+                new ArrayList<>(0)    // our synthetic response has no additional records...
+        );
+    }
+
+
+    /**
+     * Synthesizes a response message with the given answers based on this message, which must be a query.
+     *
+     * @param _responseCode The response code for this message.
+     * @return The synthetic response message.
+     */
+    public DNSMessage getSyntheticNotOKResponse( final DNSResponseCode _responseCode ) {
+
+        if( isResponse || (opCode != DNSOpCode.QUERY) )
+            throw new UnsupportedOperationException( "Can synthesize responses only for query messages" );
+
+        Checks.required( _responseCode );
+
+        return new DNSMessage(
+                id,                   // the response has the same ID as the query...
+                true,                 // it's a response...
+                opCode,               // the response has the same OpCode as the query...
+                false,                // these cached answers are not authoritative...
+                false,                // the response is not truncated..
+                recurse,              // response is copied from the query...
+                false,                // the cache cannot recurse...
+                z,                    // z is copied from the query...
+                false,                // the cached response is not authoritative...
+                false,                // checking is not disabled...
+                _responseCode,        // the not OK response code...
+                questions,            // copy the questions (always just one) from the query to the response...
+                new ArrayList<>(0),   // the answers we're synthesizing a response for...
                 new ArrayList<>(0),   // our synthetic response has no authorities...
                 new ArrayList<>(0)    // our synthetic response has no additional records...
         );

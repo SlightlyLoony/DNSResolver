@@ -85,10 +85,11 @@ public class DNSResolver {
      * @param _serverSpecs Specifies the parameters for recursive DNS server agents that may be used by this resolver.
      * @param _maxCacheSize Specifies the maximum DNS resource record cache size.
      * @param _maxAllowableTTLMillis Specifies the maximum allowable TTL (in milliseconds) for a resource record in the cache.
+     * @param _rootHints Specifies the {@link DNSRootHints} to use.
      * @throws DNSResolverException if there is a problem instantiating {@link DNSNIO}.
      */
     private DNSResolver( final ExecutorService _executor, final DNSIPVersion _ipVersion, final List<ServerSpec> _serverSpecs,
-                         final int _maxCacheSize, final long _maxAllowableTTLMillis ) throws DNSResolverException {
+                         final int _maxCacheSize, final long _maxAllowableTTLMillis, final DNSRootHints _rootHints ) throws DNSResolverException {
 
         executor      = _executor;
         nio           = new DNSNIO();
@@ -96,7 +97,7 @@ public class DNSResolver {
         serverSpecs   = _serverSpecs;
         activeQueries = new ConcurrentHashMap<>();
         nextQueryID   = new AtomicInteger();
-        cache         = new DNSCache( _maxCacheSize, _maxAllowableTTLMillis );
+        cache         = new DNSCache( _maxCacheSize, _maxAllowableTTLMillis, _rootHints );
         rootHints     = new DNSRootHints();
 
         // map our agent parameters by name...
@@ -271,7 +272,7 @@ public class DNSResolver {
         DNSMessage query = builder.getMessage();
 
         // then our response message...
-        DNSMessage response = query.getSyntheticResponse( answers );
+        DNSMessage response = query.getSyntheticOKResponse( answers );
 
         // then our log...
         DNSQuery.QueryLog queryLog = new DNSQuery.QueryLog();
@@ -374,6 +375,7 @@ public class DNSResolver {
         private       DNSIPVersion         ipVersion             = IPv4;
         private       int                  maxCacheSize          = 1000;
         private       long                 maxAllowableTTLMillis = 2 * 3600 * 1000;  // two hours...
+        private       DNSRootHints         rootHints             = new DNSRootHints();
 
 
         /**
@@ -390,7 +392,7 @@ public class DNSResolver {
 
             // try to construct the new instance (it might fail if there's a problem starting up NIO)...
             try {
-                return outcomeResolver.ok( new DNSResolver( executor, ipVersion, serverSpecs, maxCacheSize, maxAllowableTTLMillis ) );
+                return outcomeResolver.ok( new DNSResolver( executor, ipVersion, serverSpecs, maxCacheSize, maxAllowableTTLMillis, rootHints ) );
             }
             catch( DNSResolverException _e ) {
                 return outcomeResolver.notOk( "Problem creating DNSResolver", _e );
@@ -418,6 +420,18 @@ public class DNSResolver {
          */
         public Builder setIPVersion( final DNSIPVersion _ipVersion ) {
             ipVersion = _ipVersion;
+            return this;
+        }
+
+
+        /**
+         * Specifies the {@link DNSRootHints} instance that the resolver's cache will use.  The default is the instance returned by {@link DNSRootHints}'s default constructor.
+         *
+         * @param _rootHints The {@link DNSRootHints} instance that the resolver's cache will use.
+         * @return This {@link Builder}, as a convenience for setter chaining.
+         */
+        public Builder setRootHints( final DNSRootHints _rootHints ) {
+            rootHints = _rootHints;
             return this;
         }
 
