@@ -96,6 +96,7 @@ public class DNSUtil {
             return _rrs;
 
         // save the originally queried domain name, which will be the domain name of the first resource record in the given list, even if it's a CNAME...
+        DNSDomainName odn = _rrs.get( 0 ).name;
     }
 
 
