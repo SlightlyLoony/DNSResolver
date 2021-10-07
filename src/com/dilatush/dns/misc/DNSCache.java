@@ -19,7 +19,6 @@ import static com.dilatush.dns.misc.DNSUtil.filterResourceRecords;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.SEVERE;
 
-// TODO: add reference to root hints
 // TODO: add method to resolve CNAME chains
 // TODO: add method that takes a query message and produces a response message
 
@@ -47,6 +46,7 @@ public class DNSCache {
     private        final long         maxAllowableTTLMillis;  // the maximum (longest) time-to-live (TTL) that any resource record in the cache is allowed to have...
     private        final AtomicLong   uniqueInteger;          // differentiates ttlMap entries (see below) that have the same expiration time...
     private        final DNSRootHints rootHints;              // the root hints manager we'll use for recursive resolution...
+    private        final DNSIPVersion ipVersion;              // what versions of IP we're using to find name servers...
 
     /****************************************************************************************************************************************************
      * The two maps below are the key data structures for the cache.
@@ -81,8 +81,9 @@ public class DNSCache {
      * @param _maxCacheSize The maximum number of DNS resource records that may be stored in this cache.
      * @param _maxAllowableTTLMillis The maximum time, in milliseconds, that any resource record is allowed to exist before expiring.
      * @param _rootHints The {@link DNSRootHints} manager to use for recursive resolution.
+     * @param _ipVersion Specifies the IP versions to use for finding name servers.
      */
-    public DNSCache( final int _maxCacheSize, final long _maxAllowableTTLMillis, final DNSRootHints _rootHints ) {
+    public DNSCache( final int _maxCacheSize, final long _maxAllowableTTLMillis, final DNSRootHints _rootHints, final DNSIPVersion _ipVersion ) {
 
         Checks.required( _rootHints );
 
@@ -96,17 +97,19 @@ public class DNSCache {
         ttlMap                = new TreeMap<>();
         uniqueInteger         = new AtomicLong();
         rootHints             = _rootHints;
+        ipVersion             = _ipVersion;
 
         LOGGER.log( FINE, "Created DNSCache, max size " + maxCacheSize + " DNS resource records" );
     }
 
 
     /**
-     * Creates a new instance of this class with a maximum of 5,000 cached resource records, a maximum allowable TTL of two hours, and a default {@link DNSRootHints} instance.
+     * Creates a new instance of this class with a maximum of 5,000 cached resource records, a maximum allowable TTL of two hours, a default {@link DNSRootHints} instance,
+     * and using IPv4 only.
      */
     @SuppressWarnings( "unused" )
     public DNSCache() {
-        this( DEFAULT_MAX_CACHE_SIZE, DEFAULT_MAX_ALLOWABLE_TTL_MILLIS, new DNSRootHints() );
+        this( DEFAULT_MAX_CACHE_SIZE, DEFAULT_MAX_ALLOWABLE_TTL_MILLIS, new DNSRootHints(), DNSIPVersion.IPv4 );
     }
 
 
@@ -166,10 +169,7 @@ public class DNSCache {
                 nsSearchDomain = nsSearchDomain.parent();
         } while( nameServers.size() == 0 );
 
-        // if we get here, we have at least one name server, and possibly some CNAME records - filter them out...
-        nameServers = nameServers.stream().filter( (rr) -> rr.type == NS ).collect( Collectors.toList());
-
-        // let's see if we have cached IP addresses for those name servers...
+        // if we get here, we have at least one name server, and possibly some CNAME records; now we need to find the IP addresses of the name servers...
         List<DNSResourceRecord> nameServersIPs = new ArrayList<>();
         nameServers.forEach( (ns) -> {
             DNSDomainName nsdn = ((com.dilatush.dns.rr.NS)ns).nameServer;

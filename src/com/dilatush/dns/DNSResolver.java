@@ -97,7 +97,7 @@ public class DNSResolver {
         serverSpecs   = _serverSpecs;
         activeQueries = new ConcurrentHashMap<>();
         nextQueryID   = new AtomicInteger();
-        cache         = new DNSCache( _maxCacheSize, _maxAllowableTTLMillis, _rootHints );
+        cache         = new DNSCache( _maxCacheSize, _maxAllowableTTLMillis, _rootHints, _ipVersion );
         rootHints     = new DNSRootHints();
 
         // map our agent parameters by name...

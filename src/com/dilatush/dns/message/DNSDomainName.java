@@ -357,4 +357,21 @@ public class DNSDomainName {
 
         return fromLabels( labels );
     }
+
+
+    @Override
+    public boolean equals( final Object _o ) {
+
+        if( this == _o ) return true;
+        if( _o == null || getClass() != _o.getClass() ) return false;
+        DNSDomainName that = (DNSDomainName) _o;
+        return length == that.length && text.equals( that.text ) && labels.equals( that.labels );
+    }
+
+
+    @Override
+    public int hashCode() {
+
+        return Objects.hash( text, length, labels );
+    }
 }

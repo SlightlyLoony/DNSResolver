@@ -4,11 +4,11 @@ package com.dilatush.dns.rr;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
-import com.dilatush.dns.misc.DNSResolverError;
-import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.misc.DNSResolverError;
+import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.util.Outcome;
 
 import java.nio.BufferOverflowException;
@@ -20,6 +20,7 @@ import java.util.Map;
  *
  * @author Tom Dilatush  tom@dilatush.com
  */
+@SuppressWarnings( "unused" )
 public class UNIMPLEMENTED extends DNSResourceRecord {
 
     private static final Outcome.Forge<UNIMPLEMENTED> outcome       = new Outcome.Forge<>();
@@ -126,6 +127,19 @@ public class UNIMPLEMENTED extends DNSResourceRecord {
     protected boolean sameResourceData( final DNSResourceRecord _rr ) {
 
         return false;
+    }
+
+
+    /**
+     * Returns a new {@link DNSResourceRecord} instance, a clone of this instance except with the given domain name.  If the new domain name is the same as the
+     * * existing domain name, this instance is returned.
+     *
+     * @param _dn The new {@link DNSDomainName}.
+     * @return A new {@link DNSResourceRecord} instance, a clone of this instance except with the given domain name.
+     */
+    @Override
+    public DNSResourceRecord changeNameTo( final DNSDomainName _dn ) {
+        throw new UnsupportedOperationException( "Cannot change domain name of UNIMPLEMENTED" );
     }
 
 

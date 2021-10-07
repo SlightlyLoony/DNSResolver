@@ -9,6 +9,7 @@ import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.misc.DNSUtil;
 import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
 
@@ -154,6 +155,28 @@ public class A extends DNSResourceRecord {
     protected boolean sameResourceData( final DNSResourceRecord _rr ) {
 
         return Arrays.equals( address.getAddress(), ((A)_rr).address.getAddress() );
+    }
+
+
+    /**
+     * Returns a new {@link DNSResourceRecord} instance, a clone of this instance except with the given domain name.  If the new domain name is the same as the
+     * existing domain name, this instance is returned.
+     *
+     * @param _dn The new {@link DNSDomainName}.
+     * @return A new {@link DNSResourceRecord} instance, a clone of this instance except with the given domain name.
+     */
+    @Override
+    public DNSResourceRecord changeNameTo( final DNSDomainName _dn ) {
+
+        Checks.required( _dn );
+
+        // if the domain name is already the same as the given name, just return ourselves...
+        if( _dn.equals( name ) )
+            return this;
+
+        // they're different, so change the host in the IP address and return a new instance with the new domain name and normalized IP...
+        Inet4Address ip = DNSUtil.setHostName( address, _dn.text );
+        return new A( _dn, klass, ttl, dataLength, ip );
     }
 
 
