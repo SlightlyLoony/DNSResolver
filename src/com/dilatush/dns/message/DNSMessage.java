@@ -141,11 +141,25 @@ public class DNSMessage {
      * @return The synthetic response message.
      */
     public DNSMessage getSyntheticOKResponse( final List<DNSResourceRecord> _answers ) {
+        return getSyntheticOKResponse( _answers, new ArrayList<>(0), new ArrayList<>(0) );
+    }
+
+
+    /**
+     * Synthesizes a response message with the given answers, authorities, and additional records based on this message, which must be a query.
+     *
+     * @param _answers The answers for this response message.
+     * @param _authorities The authorities for this response message.
+     * @param _additionalRecords The additional recors for this response message.
+     * @return The synthetic response message.
+     */
+    public DNSMessage getSyntheticOKResponse(
+            final List<DNSResourceRecord> _answers, final List<DNSResourceRecord> _authorities, final List<DNSResourceRecord> _additionalRecords ) {
 
         if( isResponse || (opCode != DNSOpCode.QUERY) )
             throw new UnsupportedOperationException( "Can synthesize responses only for query messages" );
 
-        Checks.required( _answers );
+        Checks.required( _answers, _authorities, _additionalRecords );
 
         return new DNSMessage(
                 id,                   // the response has the same ID as the query...
@@ -160,9 +174,9 @@ public class DNSMessage {
                 false,                // checking is not disabled...
                 DNSResponseCode.OK,   // cached responses are by definition ok...
                 questions,            // copy the questions (always just one) from the query to the response...
-                _answers,             // the answers we're synthesizing a response for...
-                new ArrayList<>(0),   // our synthetic response has no authorities...
-                new ArrayList<>(0)    // our synthetic response has no additional records...
+                _answers,             // the answers we're returning...
+                _authorities,         // the authorities we're returning...
+                _additionalRecords    // the additional records we're returning...
         );
     }
 

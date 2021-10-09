@@ -5,6 +5,7 @@ import com.dilatush.dns.DNSResolver.ServerSpec;
 import com.dilatush.dns.message.DNSMessage;
 import com.dilatush.dns.message.DNSOpCode;
 import com.dilatush.dns.message.DNSQuestion;
+import com.dilatush.dns.message.DNSResponseCode;
 import com.dilatush.dns.misc.DNSCache;
 import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.util.Checks;
@@ -113,6 +114,14 @@ public class DNSForwardedQuery extends DNSQuery {
             .setId(       id & 0xFFFF     )
             .addQuestion( question );
         queryMessage = builder.getMessage();
+
+        // if we can resolve this query from the cache, we're done...
+        DNSMessage cacheResponse = cache.resolve( queryMessage );
+        if( (cacheResponse.responseCode == DNSResponseCode.OK) && (cacheResponse.answers.size() > 0) ) {
+            queryLog.log( "Resolved from cache: " + question );
+            handler.accept( queryOutcome.ok( new QueryResult( queryMessage, cacheResponse, queryLog ) ) );
+            return outcome.ok();
+        }
 
         queryLog.log("Sending forwarded query to " + agent.name + " via " + transport );
 

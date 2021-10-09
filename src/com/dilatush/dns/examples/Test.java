@@ -2,35 +2,32 @@ package com.dilatush.dns.examples;
 
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
-import com.dilatush.dns.message.DNSRRType;
-import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Outcome;
 
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.util.List;
 
 import static com.dilatush.util.General.breakpoint;
-import static java.lang.Thread.sleep;
 
 @SuppressWarnings( "unused" )
 public class Test {
 
-    public static void main( final String[] _args ) throws InterruptedException {
-
-        DNSResolver.Builder builder = new DNSResolver.Builder();
-        DNSResolver resolver = builder.getDNSResolver().info();
-
-        DNSResolverAPI api = new DNSResolverAPI( resolver );
-
-        Outcome<?> qo = api.resolve( Test::handler, "hp.com", DNSRRType.ANY );
-
-        Outcome<List<DNSResourceRecord>> rro = api.resolve( "cnn.com", DNSRRType.ANY );
-
-        sleep(5000);
-        breakpoint();
-    }
+    public static void main( final String[] _args ) throws UnknownHostException {
 
 
-    public static void handler( Outcome<List<DNSResourceRecord>> _outcome ) {
+        Inet4Address ip = (Inet4Address) InetAddress.getByName( "8.8.8.8" );
+        InetSocketAddress socket = new InetSocketAddress( ip, 53 );
+        DNSResolverAPI api = new DNSResolverAPI( DNSResolver.getDefaultForwardingResolver( socket, "Google" ) );
+
+        long start = System.currentTimeMillis();
+        Outcome<List<Inet4Address>> result = api.resolveIPv4Addresses( "www.cnn.com" );
+        long firstTime = System.currentTimeMillis();
+        result = api.resolveIPv4Addresses( "www.cnn.com" );
+        long secondTime = System.currentTimeMillis();
+
         breakpoint();
     }
 }

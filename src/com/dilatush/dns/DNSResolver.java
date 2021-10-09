@@ -6,11 +6,8 @@ package com.dilatush.dns;
 // TODO: Comments and Javadocs...
 
 
-import com.dilatush.dns.misc.*;
-import com.dilatush.dns.message.DNSMessage;
-import com.dilatush.dns.message.DNSOpCode;
 import com.dilatush.dns.message.DNSQuestion;
-import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.misc.*;
 import com.dilatush.dns.query.*;
 import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Checks;
@@ -27,7 +24,6 @@ import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 import static com.dilatush.dns.misc.DNSIPVersion.*;
-import static com.dilatush.dns.message.DNSRRType.*;
 import static com.dilatush.dns.query.DNSQuery.QueryResult;
 import static com.dilatush.util.General.getLogger;
 
@@ -143,12 +139,9 @@ public class DNSResolver {
 
         Checks.required( _question, _initialTransport, _serverSelection );
 
-        if( resolveFromCache( _question, _handler ) )
-            return outcome.ok();
-
         List<ServerSpec> servers = getServers( _serverSelection );
 
-        DNSQuery query = new DNSForwardedQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), serverSpecs, _handler );
+        DNSQuery query = new DNSForwardedQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), servers, _handler );
 
         return query.initiate( _initialTransport );
     }
@@ -178,9 +171,6 @@ public class DNSResolver {
 
         Checks.required( _question, _initialTransport );
 
-        if( resolveFromCache( _question, _handler ) )
-            return outcome.ok();
-
         DNSQuery query = new DNSRecursiveQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), _handler );
 
         return query.initiate( _initialTransport );
@@ -189,102 +179,6 @@ public class DNSResolver {
 
     public int getNextID() {
         return nextQueryID.getAndIncrement();
-    }
-
-
-    // TODO: need to break up this logic, so we can do a pure cache search (without sending the results to the customer on success)...
-
-    /**
-     * Attempts to resolve the given question from the DNS cache, returns {@code true} if it resolved successfully.  To be resolved from the cache, the given {@link DNSQuestion}
-     * must be for a discrete record type, not {@link DNSRRType#ANY} or {@link DNSRRType#UNIMPLEMENTED}.  There must be at least one result matching the question.  This method
-     * will follow CNAME record chains to see if the terminus of the chain is a record matching the type in the question.  If the resolution is successful, this method synthesizes
-     * a {@link DNSMessage} containing the answers retrieved from the cache and passes it to the given handler.  If the one of the handlers is called, the outcome it passes will
-     * always be ok.  This method does not add any resource records to the authorities or additional records sections to the synthesized response message.
-     *
-     * @param _question The {@link DNSQuestion} to attempt to resolve from the DNSCache.
-     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler to call if the question is successfully resolved from the cache and
-     *                  attachments are not being used.
-     * @return {@code true} if the question was resolved from the cache.
-     */
-    private boolean resolveFromCache( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler ) {
-
-        // we don't want to attempt resolving ANY queries from cache, because we can't tell if the cache has everything...
-        // we don't want to attempt resolving UNIMPLEMENTED queries from cache because, well, they're unimplemented...
-        if( (_question.qtype == ANY) || (_question.qtype == UNIMPLEMENTED) )
-            return false;
-
-        // get anything the cache might have from the domain we're looking for...
-        List<DNSResourceRecord> cached = cache.get( _question.qname );
-
-        // if we got nothing at all back, bail out negatively...
-        if( cached.size() == 0 )
-            return false;
-
-        // we got something back from the cache, so it's possible we can resolve the question...
-        // make a place to stuff our answers...
-        List<DNSResourceRecord> answers = new ArrayList<>();
-
-        // iterate over the cached records to see if any of them match what we're looking for, or match a CNAME that might point to what we need...
-        cached.forEach( (rr) -> {
-
-            // if the cached record matches the class and type in the question, stuff it directly into the answers...
-            if( (rr.klass == _question.qclass) && (rr.type == _question.qtype) )
-                answers.add( rr );
-
-            // if it's a CNAME, and it's the only record we got, then we need to resolve the chain (which could be arbitrarily long)...
-            // (if there's a CNAME, the DNS RFCs call for it to be the ONLY resource record with that FQDN)...
-            else if( (rr.type == CNAME) && (cached.size() == 1) ) {
-
-                // resolve the CNAME chain, recording the elements into the list answerChain...
-                List<DNSResourceRecord> answerChain = new ArrayList<>();
-                List<DNSResourceRecord> cached2 = new ArrayList<>( cached );
-                while( (cached2.size() == 1) && (cached2.get(0).type == CNAME) ) {
-                    answerChain.add( cached2.get( 0 ) );
-                    cached2 = cache.get( ((com.dilatush.dns.rr.CNAME)cached2.get( 0 )).cname );
-                }
-
-                // at this point, answerChain contains 1 or more CNAME records, and cached2 contains a different kind of records, or no record...
-                // so now we see if cached2 has any of the kinds of records we actually want, and if so we add them to answerChain...
-                AtomicBoolean gotOne = new AtomicBoolean( false );
-                cached2.stream()
-                        .filter(  (arr) -> (arr.klass == _question.qclass) && (arr.type == _question.qtype) )
-                        .forEach( (arr) -> { gotOne.set( true ); answerChain.add( arr ); } );
-
-                // if we got at least one, then dump the CNAME resolution chain into our answers...
-                if( gotOne.get() )
-                    answers.addAll( answerChain );
-            }
-        } );
-
-        // if we got no answers, then we leave, sadly, with a negative answer...
-        if( answers.isEmpty() )
-            return false;
-
-        // get our synthesized query results, as we have some answers...
-
-        // first our query message...
-        DNSMessage.Builder builder = new DNSMessage.Builder();
-        builder.addQuestion( _question );
-        builder
-            .setOpCode(     DNSOpCode.QUERY )
-            .setRecurse(    true            )
-            .setCanRecurse( true            );
-        DNSMessage query = builder.getMessage();
-
-        // then our response message...
-        DNSMessage response = query.getSyntheticOKResponse( answers );
-
-        // then our log...
-        DNSQuery.QueryLog queryLog = new DNSQuery.QueryLog();
-        queryLog.log( "Query resolved from cache: " + _question );
-
-        // finally, we have our query result...
-        QueryResult queryResult = new QueryResult( query, response, queryLog );
-
-        // call the right handler with the result, for we are done...
-        _handler.accept( outcomeQueryResult.ok( queryResult ) );
-
-        return true;
     }
 
 

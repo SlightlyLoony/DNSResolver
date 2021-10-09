@@ -11,11 +11,11 @@ import com.dilatush.util.Outcome;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 import static com.dilatush.dns.message.DNSRRType.*;
 import static com.dilatush.dns.message.DNSResponseCode.*;
 import static com.dilatush.dns.misc.DNSUtil.filterResourceRecords;
+import static com.dilatush.dns.misc.DNSUtil.normalizeResourceRecords;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.SEVERE;
 
@@ -161,20 +161,36 @@ public class DNSCache {
         List<DNSResourceRecord> nameServers;
         do {
             nameServers = resolveAnswers( new DNSQuestion( nsSearchDomain, NS ) );
-            if( nsSearchDomain.isRoot() && (nameServers.size() == 0) ) {
-                if( !updateRootHints() )
-                    return _queryMessage.getSyntheticNotOKResponse( SERVER_FAILURE );
+            if( nameServers.size() == 0 ) {
+                if( nsSearchDomain.isRoot() ) {
+                    if( !updateRootHints() )
+                        return _queryMessage.getSyntheticNotOKResponse( SERVER_FAILURE );
+                } else
+                    nsSearchDomain = nsSearchDomain.parent();
             }
-            else
-                nsSearchDomain = nsSearchDomain.parent();
         } while( nameServers.size() == 0 );
 
-        // if we get here, we have at least one name server, and possibly some CNAME records; now we need to find the IP addresses of the name servers...
+        // now we need to find the IP addresses of the name servers we found, if we have them...
         List<DNSResourceRecord> nameServersIPs = new ArrayList<>();
-        nameServers.forEach( (ns) -> {
-            DNSDomainName nsdn = ((com.dilatush.dns.rr.NS)ns).nameServer;
-
+        nameServers.forEach( (rr) -> {
+            NS ns = ((NS)rr);
+            DNSDomainName nsdn = ns.nameServer;
+            nameServersIPs.addAll(
+                    switch( ipVersion ) {
+                        case IPv4    -> get( nsdn, A       );
+                        case IPv6    -> get( nsdn, AAAA    );
+                        case IPvBoth -> get( nsdn, A, AAAA );
+                    }
+            );
         } );
+
+        // if we get here, we have at least one name server, and possibly some CNAME records; normalize that...
+        // NOTE: RFC 1034 says that NS records should never have CNAME records pointing to them - but we've seen this in the wild, so we accommodate it...
+        // if there are no CNAME records, then normalization does nothing at all...
+        nameServers = normalizeResourceRecords( nameServers, NS );
+
+        // now we have everything we need to make up our response...
+        return _queryMessage.getSyntheticOKResponse( new ArrayList<>(0), nameServers, nameServersIPs );
     }
 
 
