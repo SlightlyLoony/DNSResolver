@@ -11,9 +11,12 @@ import com.dilatush.util.ExecutorService;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
 
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
@@ -28,9 +31,22 @@ import static java.util.logging.Level.FINEST;
  */
 public class DNSRecursiveQuery extends DNSQuery {
 
-    private static final Logger LOGGER                           = General.getLogger();
-    private static final long   RECURSIVE_NAME_SERVER_TIMEOUT_MS = 5000;
-    private static final int    DNS_SERVER_PORT                  = 53;
+    private static final Logger       LOGGER                           = General.getLogger();
+    private static final long         RECURSIVE_NAME_SERVER_TIMEOUT_MS = 5000;
+    private static final int          DNS_SERVER_PORT                  = 53;
+    private static final Inet4Address WILDCARD_IP;
+
+        // Oh, how do I hate exceptions?  Let me count the ways...
+        static {
+            Inet4Address wildcard = null;
+            try {
+                wildcard = (Inet4Address) InetAddress.getByName( "0.0.0.0" );
+            }
+            catch( UnknownHostException _e ) {
+                // impossible; we're just making the compiler happy...
+            }
+            WILDCARD_IP = wildcard;
+        }
 
     private static final Outcome.Forge<QueryResult> queryOutcome = new Outcome.Forge<>();
 
@@ -38,6 +54,9 @@ public class DNSRecursiveQuery extends DNSQuery {
     private final List<InetAddress>       nextNameServerIPs;     // IP addresses of the next name servers to query...
     private final AtomicInteger           subQueries;            // the number of sub-queries currently running...
     private final List<DNSResourceRecord> answers;               // the answers to this query...
+
+    private       boolean                 haveQueriedNSIPs;      // true if we have already queried for name server IP addresses...
+    private       Map<String,InetAddress> nameServerIPMap;       // map of name servers to IP addresses, with wild card IP for those we don't have addresses for...
 
 
     /**
@@ -65,6 +84,8 @@ public class DNSRecursiveQuery extends DNSQuery {
         nextNameServerIPs = new ArrayList<>();
         subQueries        = new AtomicInteger();
         answers           = new ArrayList<>();
+
+        haveQueriedNSIPs  = false;
 
         queryLog.log("New recursive query " + question );
     }
@@ -133,7 +154,7 @@ public class DNSRecursiveQuery extends DNSQuery {
             return outcome.notOk( msg, new DNSResolverException( msg, DNSResolverError.BAD_QUERY ) );
         }
 
-        // if the response code is OK and we have some answers, then we're done...
+        // if the response code is OK, and we have some answers, then we're done...
         if( (cacheResponse.responseCode == OK) && (cacheResponse.answers.size() > 0) ) {
             queryLog.log( "Resolved from cache: " + question );
             handler.accept( queryOutcome.ok( new QueryResult( queryMessage, cacheResponse, queryLog ) ) );
@@ -146,34 +167,36 @@ public class DNSRecursiveQuery extends DNSQuery {
          *
          *    if we don't have enough IP addresses for the authoritative name servers
          *       make sub-queries to get the needed IP addresses
-         *    query the authoritative name servers
+         *    query the authoritative name servers one at a time, until we get some answers
          *    cache the answers
          *    re-issue the original query
          *
          * By updating the cache above, we're providing more information pertinent to the original query.  We'll be one step closer
          * to resolving it.  The algorithm above may need to be repeated several times before the query is resolved.  At worst case,
          * it will need to be repeated 'n' times, where 'n' is the number of labels in the domain name being queried.  Better cases
-         * occur because some information has been cached.
+         * occur because some information has previously been cached.
          *
          * Above we refer to "enough IP addresses for the name servers".  What we mean by that is either an IP address for every
-         * name server, or at least two name servers with IP addresses.
+         * name server, or at least two name servers with IP addresses.  This is just a heuristic to attempt to guarantee that we
+         * can successfully query an authoritative name server.  It's common for the authorities to contain more than two name
+         * servers, and relatively uncommon for the authorities to have just one.  Sometimes the resource records for those name
+         * servers have very short (a few seconds) TTLs; this is most common when CDNs are in use.
          * ------------------------------------------------------------------------------------------------------------------------ */
 
-        // build a map of all the name servers we know, with the name server host name as the key...
-        Map<String,InetAddress> nsMap = new HashMap<>();   // map name server host names to IPs...
-        cacheResponse.authorities.forEach( (rr) -> nsMap.put( rr.name.text, null ) );
+        // make sure we got a valid-looking answer...
+        if( (cacheResponse.responseCode != OK) || (cacheResponse.authorities.size() == 0) ) {
+            String msg = "No name servers available for resolving " + cacheResponse.getQuestion().qclass.text;
+            queryLog.log( msg );
+            return outcome.notOk( msg, new DNSResolverException( msg, DNSResolverError.NO_NAME_SERVERS ) );
+        }
 
-        // associate any IP addresses we know with the name servers...
-        cacheResponse.additionalRecords.forEach( (rr) -> {
-            if( nsMap.containsKey( rr.name.text ) ) {
-                if( rr instanceof A )
-                    nsMap.put( rr.name.text, ((A)rr).address );
-                else if( rr instanceof AAAA )
-                    nsMap.put( rr.name.text, ((AAAA)rr).address );
-            }
-        } );
+        // see if we need to sub-query for name server IP addresses - but don't do it more than once...
+        if( !haveEnoughNameServerIPs( cacheResponse ) && !haveQueriedNSIPs )
+            return subQueryForNameServerIPs();
 
-        // let's see if we have enough IP addresses...
+        // clear this flag, so that if we have to sub-query for a more specific label we won't think we've already done it...
+        haveQueriedNSIPs = false;
+
         xxxx
 
 
@@ -187,6 +210,106 @@ public class DNSRecursiveQuery extends DNSQuery {
         return sendOutcome.ok()
                 ? queryOutcome.ok( new QueryResult( queryMessage, null, queryLog ) )
                 : queryOutcome.notOk( sendOutcome.msg(), sendOutcome.cause() );
+   }
+
+
+    /**
+     * Analyzes the given response message, extracting the name servers from the authorities section, and the IP addresses for the name servers from the additional records
+     * section.  Builds the {@link #nameServerIPMap} from that information, and also attempts to resolve IP addresses from the cache for any name servers that the response didn't
+     * provide IP addresses for.  Returns {@code true} if there are enough IP addresses (that is, there is an IP address for every name server, or there are at least two IP
+     * addresses).
+     *
+     * @param _response The {@link DNSMessage} response message to analyze.
+     * @return {@code true} if there are enough IP addresses.
+     */
+   private boolean haveEnoughNameServerIPs( final DNSMessage _response ) {
+
+       // build a map of all the name servers in the response, with the name server host name as the key and the wildcard IP (which can never belong to a name server)...
+       nameServerIPMap = new HashMap<>();   // map name server host names to IPs...
+       _response.authorities.forEach( (rr) -> nameServerIPMap.put( rr.name.text, WILDCARD_IP ) );
+
+       // associate any IP addresses in the response with the name servers...
+       _response.additionalRecords.forEach( (rr) -> {
+           if( nameServerIPMap.containsKey( rr.name.text ) ) {
+               if( rr instanceof A )
+                   nameServerIPMap.put( rr.name.text, ((A)rr).address );
+               else if( rr instanceof AAAA )
+                   nameServerIPMap.put( rr.name.text, ((AAAA)rr).address );
+           }
+       } );
+
+       // try resolving name server IPs from the cache, for those name server IPs we didn't get in the response...
+       nameServerIPMap.entrySet()
+               .stream()
+               .filter( (entry) -> { return entry.getValue() == WILDCARD_IP; } )    // the == works here, because we're looking for occurrences of the same instance...
+               .forEach( (entry) -> {
+
+                   // get a list of all the IPs the cache has for this name server host name...
+                   List<DNSResourceRecord> ips = switch( resolver.getIpVersion() ) {
+                       case IPv4 ->    cache.get( entry.getKey(), DNSRRType.A                 );
+                       case IPv6 ->    cache.get( entry.getKey(), DNSRRType.AAAA              );
+                       case IPvBoth -> cache.get( entry.getKey(), DNSRRType.A, DNSRRType.AAAA );
+                   };
+
+                   // if we actually got some IPs, associate the first one with the name server...
+                   if( ips.size() > 0 ) {
+                       DNSResourceRecord iprr = ips.get( 0 );
+                       InetAddress nsip = (iprr instanceof A) ? ((A)iprr).address : ((AAAA)iprr).address;
+                       entry.setValue( nsip );
+                   }
+               } );
+
+       // we now have one or more name servers, with zero or more associated IP addresses - time to see if we have enough, or if we need to sub-query...
+       long ipCount = nameServerIPMap.values().stream().filter( (ip) -> ip != WILDCARD_IP ).count();  // count the associated IPs...
+       return (ipCount == nameServerIPMap.size()) || (ipCount >= 2);
+   }
+
+
+   private Outcome<?> subQueryForNameServerIPs() {
+
+       // we assume a good outcome until and if we get a bad one below...
+       var result = new Object() {
+           Outcome<?> result = outcome.ok();
+       };
+
+       nameServerIPMap.entrySet()
+               .stream()
+               .filter( (entry) -> entry.getValue() == WILDCARD_IP )
+               .forEach( (entry) -> {
+
+                   // fire off the query for the A record...
+                   if( resolver.useIPv4() ) {
+                       subQueries.incrementAndGet();
+                       String msg = "Firing " + entry.getKey() + " A record sub-query " + subQueries.get() + " from query " + id;
+                       LOGGER.finest( msg );
+                       queryLog.log( msg );
+                       DNSQuestion aQuestion = new DNSQuestion( DNSDomainName.fromString( entry.getKey() ).info(), DNSRRType.A );
+                       DNSRecursiveQuery recursiveQuery
+                               = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
+                       Outcome<?> resultInt = recursiveQuery.initiate( UDP );
+                       if( resultInt.notOk() )
+                           result.result = resultInt;
+                   }
+
+                   // fire off the query for the AAAA record...
+                   if( resolver.useIPv6() ) {
+                       subQueries.incrementAndGet();
+                       String msg = "Firing " + entry.getKey() + " AAAA record sub-query " + subQueries.get() + " from query " + id;
+                       LOGGER.finest( msg );
+                       queryLog.log( msg );
+                       DNSQuestion aQuestion = new DNSQuestion( DNSDomainName.fromString( entry.getKey() ).info(), DNSRRType.AAAA );
+                       DNSRecursiveQuery recursiveQuery
+                               = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
+                       Outcome<?> resultInt = recursiveQuery.initiate( UDP );
+                       if( resultInt.notOk() )
+                           result.result = resultInt;
+                   }
+       } );
+
+       // remember that we've queried for these IPs, so we don't do it more than once...
+       haveQueriedNSIPs = true;
+
+       return result.result;
    }
 
 

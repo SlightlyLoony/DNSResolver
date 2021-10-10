@@ -239,6 +239,11 @@ public class DNSResolver {
     }
 
 
+    public DNSIPVersion getIpVersion() {
+        return ipVersion;
+    }
+
+
     public void clear() {
         cache.clear();
     }

@@ -36,5 +36,8 @@ public enum DNSResolverError {
     NO_ROOT_SERVERS,
 
     /** Query message is not a query or has no question. */
-    BAD_QUERY
+    BAD_QUERY,
+
+    /** Could not find name servers to satisfy the query. */
+    NO_NAME_SERVERS
 }
