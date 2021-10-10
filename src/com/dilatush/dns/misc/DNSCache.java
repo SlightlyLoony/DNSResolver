@@ -130,7 +130,7 @@ public class DNSCache {
      *     the IP addresses of the name servers are in the cache, they will be in the additional records.</li>
      * </ul>
      * Note that if the query is somehow malformed, the response code will be {@link DNSResponseCode#FORMAT_ERROR}, and there will be no answers, authorities, or additional
-     * records.
+     * records.  Also, if root hints cannot be downloaded, a {@link DNSResponseCode#SERVER_FAILURE} will be returned.
      *
      * @param _queryMessage The {@link DNSMessage} containing the query to be resolved (if possible) from the cache.
      * @return The {@link DNSMessage} containing the result of the attempted resolution from cache.

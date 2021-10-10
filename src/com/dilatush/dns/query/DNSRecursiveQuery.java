@@ -1,10 +1,10 @@
 package com.dilatush.dns.query;
 
 import com.dilatush.dns.DNSResolver;
+import com.dilatush.dns.message.*;
+import com.dilatush.dns.misc.DNSCache;
 import com.dilatush.dns.misc.DNSResolverError;
 import com.dilatush.dns.misc.DNSResolverException;
-import com.dilatush.dns.misc.DNSCache;
-import com.dilatush.dns.message.*;
 import com.dilatush.dns.rr.*;
 import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
@@ -17,8 +17,8 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
+import static com.dilatush.dns.message.DNSResponseCode.*;
 import static com.dilatush.dns.query.DNSTransport.UDP;
 import static java.util.logging.Level.FINER;
 import static java.util.logging.Level.FINEST;
@@ -87,81 +87,6 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         initialTransport = _initialTransport;
 
-        /*
-        ------------------------------------------------------------------------------------------------------------------------------------------------
-        | We can get here either through the DNSResolver (for the initial query), or through a sub-query initiated elsewhere in this class (to query for
-        | a name server IP address, or to follow a CNAME chain in the result).  However we get here, we know that the initial query could not be
-        | resolved from cache, so we're going to have to resolve it recursively.  We may have name servers for a parent domain, however -- we don't
-        | necessarily have to start with querying a root server.
-        |
-        | So the first thing we're going to do is to see if we have name servers in the cache for any of the parent domains of our query.  For example,
-        | if the original query was for "alpha.beta.gamma.com" A records, we're going to do the following cache searches (stopping when one succeeds):
-        |   "beta.gamma.com" for NS records
-        |   "gamma.com" for NS records
-        |   "com" for NS records
-        |   ...and finally, the root for NS records (that search will always succeed).
-        ------------------------------------------------------------------------------------------------------------------------------------------------
-        */
-        // we need to figure out the starting nameservers, and make agents for them...
-        // we know the actual question wasn't cached, as we wouldn't have queried at all if it was - so we start looking with its parent domain,
-        // unless we're already at the root domain...
-        DNSDomainName searchDomain = question.qname.isRoot() ? question.qname : question.qname.parent();
-
-        List<InetAddress> nsIPs = new ArrayList<>();
-
-        // check our search domain, and its parents if necessary, until we have some name servers to go ask questions of...
-        while( nsIPs.size() == 0 ) {
-
-            // check the cache for name server (NS) records for the domain we're checking...
-            List<DNSResourceRecord> ns = cache.get( searchDomain )
-                    .stream()
-                    .filter( (rr) -> rr instanceof NS )
-                    .collect( Collectors.toList());
-
-            // let's see if we have an IP address for any name servers we got...
-            ns.forEach( (rr) -> addIPs( nsIPs, cache.get( ((NS)rr).nameServer ) ) );
-
-            // if we have at least one IP address, then we're done...
-            if( nsIPs.size() > 0 ) {
-                queryLog.log( "Resolved '" + searchDomain.text + "' from cache" );
-                break;
-            }
-
-            // no IPs yet, but if our search domain isn't the root, we can check its parent...
-            if( !searchDomain.isRoot() ) {
-                searchDomain = searchDomain.parent();
-                continue;
-            }
-
-            queryLog.log( "No cache hits; starting from root" );
-
-            // no IPs yet, and we're searching the root - this means one of:
-            // -- we're not caching anything
-            // -- the root name servers expired and were purged
-            // either way, we need to read the root hints to get the root name servers...
-            // so read the root hints, and if we get a null, that means we couldn't read them - very bad...
-            List<DNSResourceRecord> rootHints = resolver.getRootHints();
-            if( rootHints == null ) {
-                queryLog.log( "Could not read root hints" );
-                return queryOutcome.notOk( "Could not load root hints", new QueryResult( queryMessage, null, queryLog ) );
-            }
-
-            // add the root name server IP addresses to our list...
-            addIPs( nsIPs, rootHints );
-
-            // if we STILL have no IPs for name servers, we're dead (this really should never happen until the heat death of the universe)...
-            if( nsIPs.isEmpty() ) {
-                queryLog.log( "Could not find any root name server IP addresses" );
-                return queryOutcome.notOk(
-                        "Could not find any root name server IP addresses",
-                        new DNSResolverException( "No root servers", DNSResolverError.NO_ROOT_SERVERS ),
-                        new QueryResult( queryMessage, null, queryLog ) );
-            }
-        }
-
-        // turn our IP addresses into agent parameters...
-        nsIPs.forEach( (ip) -> serverSpecs.add( new DNSResolver.ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
-
         return query();
     }
 
@@ -180,10 +105,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         transport = initialTransport;
 
-        // figure out what agent we're going to use...
-        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
-
-        LOGGER.finer( "Recursive query - ID: " + id + ", " + question.toString() + ", using " + agent.name );
+        LOGGER.finer( "Recursive query - ID: " + id + ", " + question.toString() );
 
         DNSMessage.Builder builder = new DNSMessage.Builder();
         builder
@@ -194,7 +116,71 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         queryMessage = builder.getMessage();
 
-        queryLog.log("Sending recursive query for " + question + " to " + agent.name + " via " + transport );
+        // try to resolve the query through the cache...
+        DNSMessage cacheResponse = cache.resolve( queryMessage );
+
+        // if the response code is SERVER_FAILURE, then we couldn't get the root hints - that's fatal; let the user know...
+        if( cacheResponse.responseCode == SERVER_FAILURE ) {
+            String msg = "Could not get root hints from cache";
+            queryLog.log( msg );
+            return outcome.notOk( msg, new DNSResolverException( msg, DNSResolverError.ROOT_HINTS_PROBLEMS ) );
+        }
+
+        // if the response code is FORMAT_ERROR, then the query is malformed - that's fatal; let the user know...
+        if( cacheResponse.responseCode == FORMAT_ERROR ) {
+            String msg = "Query is malformed";
+            queryLog.log( msg );
+            return outcome.notOk( msg, new DNSResolverException( msg, DNSResolverError.BAD_QUERY ) );
+        }
+
+        // if the response code is OK and we have some answers, then we're done...
+        if( (cacheResponse.responseCode == OK) && (cacheResponse.answers.size() > 0) ) {
+            queryLog.log( "Resolved from cache: " + question );
+            handler.accept( queryOutcome.ok( new QueryResult( queryMessage, cacheResponse, queryLog ) ) );
+            return outcome.ok();
+        }
+
+        /* ------------------------------------------------------------------------------------------------------------------------
+         * If we get here, then we should have an OK response with no answers, at least one name server in authorities, and possibly
+         * one or more additional records with IP addresses (of the name servers).  The algorithm from here goes about like this:
+         *
+         *    if we don't have enough IP addresses for the authoritative name servers
+         *       make sub-queries to get the needed IP addresses
+         *    query the authoritative name servers
+         *    cache the answers
+         *    re-issue the original query
+         *
+         * By updating the cache above, we're providing more information pertinent to the original query.  We'll be one step closer
+         * to resolving it.  The algorithm above may need to be repeated several times before the query is resolved.  At worst case,
+         * it will need to be repeated 'n' times, where 'n' is the number of labels in the domain name being queried.  Better cases
+         * occur because some information has been cached.
+         *
+         * Above we refer to "enough IP addresses for the name servers".  What we mean by that is either an IP address for every
+         * name server, or at least two name servers with IP addresses.
+         * ------------------------------------------------------------------------------------------------------------------------ */
+
+        // build a map of all the name servers we know, with the name server host name as the key...
+        Map<String,InetAddress> nsMap = new HashMap<>();   // map name server host names to IPs...
+        cacheResponse.authorities.forEach( (rr) -> nsMap.put( rr.name.text, null ) );
+
+        // associate any IP addresses we know with the name servers...
+        cacheResponse.additionalRecords.forEach( (rr) -> {
+            if( nsMap.containsKey( rr.name.text ) ) {
+                if( rr instanceof A )
+                    nsMap.put( rr.name.text, ((A)rr).address );
+                else if( rr instanceof AAAA )
+                    nsMap.put( rr.name.text, ((AAAA)rr).address );
+            }
+        } );
+
+        // let's see if we have enough IP addresses...
+        xxxx
+
+
+        queryLog.log( "Sending recursive query for " + question + " to " + agent.name + " via " + transport );
+
+        // figure out what agent we're going to use...
+        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
 
         Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
 
@@ -281,7 +267,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         // we DO have unresolved name servers, so blast out sub-queries to resolve them
 
-        // TODO: try to resolve from cache before firing off subqueries
+        // TODO: try to resolve from cache before firing off sub-queries
         // send out the sub-queries...
         unresolvedNameServers.forEach( (unresolvedNameServer) -> {
 
@@ -306,34 +292,6 @@ public class DNSRecursiveQuery extends DNSQuery {
                 recursiveQuery.initiate( UDP );
             }
         } );
-    }
-
-
-    private record AnswersAnalysis( int cnameCount, int desiredCount, int wrongCount, boolean bogus ){}
-
-    private AnswersAnalysis analyzeAnswers() {
-
-        final int[] cnameCount   = {0};
-        final int[] desiredCount = {0};
-        final int[] wrongCount   = {0};
-        final boolean[] bogus = {false};
-        answers.forEach( (rr) -> {
-            if( rr instanceof CNAME ) {
-                cnameCount[ 0 ]++;
-                if( desiredCount[0] > 0 ) {
-                    bogus[0] = true;
-                }
-            }
-            else if( rr.type == question.qtype ) {
-                desiredCount[0]++;
-            }
-            else {
-                wrongCount[0]++;
-                bogus[0] = true;
-            }
-        } );
-
-        return new AnswersAnalysis( cnameCount[0], desiredCount[0], wrongCount[0], bogus[0] );
     }
 
 

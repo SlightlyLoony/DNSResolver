@@ -32,6 +32,9 @@ public enum DNSResolverError {
     /** Invalid resource record class code, not decodable. */
     INVALID_RESOURCE_RECORD_CLASS_CODE,
 
-    /** Could not find IPs of any root servers */
-    NO_ROOT_SERVERS
+    /** Could not find IPs of any root servers. */
+    NO_ROOT_SERVERS,
+
+    /** Query message is not a query or has no question. */
+    BAD_QUERY
 }

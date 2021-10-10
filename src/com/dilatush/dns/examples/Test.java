@@ -20,7 +20,7 @@ public class Test {
 
         Inet4Address ip = (Inet4Address) InetAddress.getByName( "8.8.8.8" );
         InetSocketAddress socket = new InetSocketAddress( ip, 53 );
-        DNSResolverAPI api = new DNSResolverAPI( DNSResolver.getDefaultForwardingResolver( socket, "Google" ) );
+        DNSResolverAPI api = new DNSResolverAPI( DNSResolver.getDefaultRecursiveResolver() );
 
         long start = System.currentTimeMillis();
         Outcome<List<Inet4Address>> result = api.resolveIPv4Addresses( "www.cnn.com" );
