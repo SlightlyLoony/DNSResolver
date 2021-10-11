@@ -20,8 +20,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
-import static com.dilatush.dns.DNSResolver.*;
+import static com.dilatush.dns.DNSResolver.ServerSpec;
 import static com.dilatush.dns.message.DNSResponseCode.*;
+import static com.dilatush.dns.misc.DNSResolverError.NETWORK;
 import static com.dilatush.dns.query.DNSTransport.UDP;
 import static com.dilatush.util.General.breakpoint;
 import static java.util.logging.Level.FINER;
@@ -141,6 +142,9 @@ public class DNSRecursiveQuery extends DNSQuery {
         // try to resolve the query through the cache...
         DNSMessage cacheResponse = cache.resolve( queryMessage );
 
+        queryLog.log( "Resolved from cache: response code: " + cacheResponse.responseCode + ", " + cacheResponse.answers.size() + " answers, " + cacheResponse.authorities.size()
+            + " authorities, " + cacheResponse.additionalRecords.size() + " additional records" );
+
         // if the response code is SERVER_FAILURE, then we couldn't get the root hints - that's fatal; let the user know...
         if( cacheResponse.responseCode == SERVER_FAILURE ) {
             String msg = "Could not get root hints from cache";
@@ -211,7 +215,7 @@ public class DNSRecursiveQuery extends DNSQuery {
                 ServerSpec spec = new ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, entry.getKey(), socket );   // get a server spec for our name server...
                 serverSpecs.add( spec );                                                                           // add it to our hoppy list of servers...
             } );
-
+        queryLog.log( "Starting query of \"" + cacheResponse.authorities.get( 0 ).name.text + "\" authorities; " + serverSpecs.size() + " name server authorities available" );
 
         // now we kick things off by querying the first DNS server...
         return queryNextDNSServer();
@@ -355,9 +359,125 @@ public class DNSRecursiveQuery extends DNSQuery {
    }
 
 
+    /**
+     * Response handler for responses to this query (not sub-queries).  There are several possible sorts of responses:
+     * <ul>
+     *     <li>Response code OK, answer authoritative, with answers: the original query has been satisfied and we can return the answers to the caller.</li>
+     *     <li>Response code NAME_ERROR, answer authoritative: the domain name being queried does not exist; we need to return that information to the caller.</li>
+     *     <li>Response code OK, no answers, at least one authority, possibly some additional records: one more step on the recursive resolution trail; we need to update the
+     *     cache and try querying again.</li>
+     *     <li>The message was received on UDP and was truncated; retry the query on TCP.</li>
+     *     <li>The message was received on a different transport than was expected: an error; must be reported to the caller.</li>
+     * </ul>
+     *
+     * @param _responseMsg The {@link DNSMessage} received from a DNS server.
+     * @param _transport The transport (UDP or TCP) that the message was received on.
+     */
    protected void handleResponse( final DNSMessage _responseMsg, final DNSTransport _transport ) {
+
+       Checks.required( _responseMsg, _transport );
+
+       String msg = "Received response via " + _transport + ": " + _responseMsg.toString();
+       queryLog.log( msg );
+       LOGGER.finer( msg );
+
+       // no matter what happens next, we need to shut down the agent...
+       agent.close();
+
+       // stuff the response away...
+       responseMessage = _responseMsg;
+
+       // if the message came in on the wrong transport, that's an error...
+       if( _transport != transport ) {
+           handleWrongTransport( _transport );
+           return;
+       }
+
+       // if our UDP response was truncated, retry it with TCP - we're not done yet...
+       if( (transport == UDP) && _responseMsg.truncated ) {
+           handleTruncatedMessage();
+           return;
+       }
+
+       // if we make it here, then we need to figure out what the message is trying to tell use...
+
+       // if it's OK, we have no answers, but we have at least one authority, then it's time to take the next step on our recursive journey...
+       if( (responseMessage.responseCode == OK) && (responseMessage.answers.size() == 0) && (responseMessage.authorities.size() > 0) ) {
+
+           // update the cache with all this lovely information we just received...
+           updateCacheFromMessage( responseMessage );
+
+           // now we'll retry the query...
+           Outcome<?> qo = query();
+
+           // if it failed, then we have to tell our caller that things just didn't work out...
+           if( qo.notOk() ) {
+               handler.accept( queryOutcome.notOk(
+                       "Problem sending recursive query: " + qo.msg(),
+                       new DNSResolverException( qo.msg(), DNSResolverError.BAD_QUERY ),
+                       new QueryResult( queryMessage, null, queryLog ) ) );
+           }
+       }
+
+       // if it's OK, authoritative, and we have at least one answer, then we've finished our recursive journey and it's time to give our caller what he asked for...
+       else if( (responseMessage.responseCode == OK) && (responseMessage.answers.size() > 0) && responseMessage.authoritativeAnswer ) {
+
+           updateCacheFromMessage( responseMessage );
+           handler.accept( queryOutcome.ok( new QueryResult( queryMessage, responseMessage, queryLog )) );
+       }
+
+       // if it's a NAME_ERROR, and authoritative, then it's time to disappoint our caller...
+       else if( (responseMessage.responseCode == NAME_ERROR) && responseMessage.authoritativeAnswer ) {
+
+       }
+
+       // otherwise, it's something we don't understand, so log it and tell our caller we've failed...
+       else {
+
+       }
+
+
        breakpoint();
    }
+
+
+    /**
+     * Called when there is a problem of some kind that occurs before a message is received and decoded.  That means we don't have a lot of context for the error, but we still
+     * need to try another server, or (if we run out of servers to try), to do some cleanup and tell the customer what happened.
+     *
+     * @param _msg A message describing the problem.
+     * @param _cause An optional {@link Throwable} cause.
+     */
+    protected void handleProblem( final String _msg, final Throwable _cause ) {
+
+        queryLog.log( _msg + ((_cause != null) ? " - " + _cause.getMessage() : "") );
+
+        // while we've got more servers to try...
+        while( !serverSpecs.isEmpty() ) {
+
+            // resend the query to the next server...
+            Outcome<?> qo = query();
+
+            // if it was sent ok, we're done...
+            if( qo.ok() )
+                return;
+        }
+
+        // if we get here, we ran out of servers to try - clean up and tell the customer what happened...
+
+        // some cleanup...
+        agent.close();
+        activeQueries.remove( (short) id );
+
+        queryLog.log("No more DNS servers to try" );
+        handler.accept(
+                queryOutcome.notOk(
+                        _msg,
+                        new DNSResolverException( _msg, _cause, NETWORK ),
+                        new QueryResult( queryMessage, null, queryLog )
+                )
+        );
+    }
 
 
     /**
@@ -431,7 +551,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         // if we don't have any unresolved name servers, then we can just start the next query going...
         if( unresolvedNameServers.isEmpty() ) {
-            startNextQuery();
+            //startNextQuery();
             return;
         }
 
@@ -630,38 +750,6 @@ public class DNSRecursiveQuery extends DNSQuery {
     }
 
 
-    private void startNextQuery() {
-
-        // if we have no IPs to query, we've got a problem...
-        if( nextNameServerIPs.isEmpty() ) {
-            handler.accept( queryOutcome.notOk( "Recursive query; no name server available for: " + question.qname.text, null,
-                    new QueryResult( queryMessage, null, queryLog )) );
-            activeQueries.remove( (short) id );
-            return;
-        }
-
-        // turn our IP addresses into agent parameters...
-        serverSpecs.clear();
-        nextNameServerIPs.forEach( ( ip) -> serverSpecs.add( new ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
-
-        // figure out what agent we're going to use...
-        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
-
-        String logMsg = "Subsequent recursive query: " + question.toString() + ", using " + agent.name;
-        LOGGER.finer( logMsg );
-        queryLog.log( logMsg );
-
-        // send the next level query...
-        transport = initialTransport;
-        Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
-        if( sendOutcome.notOk() ) {
-            handler.accept( queryOutcome.notOk( "Could not send query: " + sendOutcome.msg(), sendOutcome.cause(),
-                    new QueryResult( queryMessage, null, queryLog )) );
-            activeQueries.remove( (short) id );
-        }
-    }
-
-
     /**
      * Handle the outcome of a sub-query for name server resolution.  Note that if the executor is configured with multiple threads, then it's possible for multiple threads to
      * execute this method concurrently; hence the synchronization.
@@ -677,10 +765,10 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         synchronized( this ) {
 
-            // if we got a good result, then add any IPs we got to the next IPs list...
+            // if we got a good result, then add any IPs we got to the cache...
             DNSMessage response = _outcome.info().response();
             if( _outcome.ok() && (response != null) )
-                addIPs( nextNameServerIPs, response.answers );
+                cache.add( response.answers );
 
             // whatever happened, log the sub-query...
             queryLog.log( "Name server resolution sub-query" );
@@ -690,8 +778,19 @@ public class DNSRecursiveQuery extends DNSQuery {
         // decrement our counter, and if we're done, try sending the next query...
         int queryCount = subQueries.decrementAndGet();
         LOGGER.fine( "Sub-query count: " + queryCount );
-        if( queryCount == 0 )
-            startNextQuery();
+        if( queryCount == 0 ) {
+
+            // now we'll retry the query...
+            Outcome<?> qo = query();
+
+            // if it failed, then we have to tell our caller that things just didn't work out...
+            if( qo.notOk() ) {
+                handler.accept( queryOutcome.notOk(
+                        "Problem sending recursive query: " + qo.msg(),
+                        new DNSResolverException( qo.msg(), DNSResolverError.BAD_QUERY ),
+                        new QueryResult( queryMessage, null, queryLog ) ) );
+            }
+        }
     }
 
 

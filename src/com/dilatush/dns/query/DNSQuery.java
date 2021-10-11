@@ -161,7 +161,7 @@ public abstract class DNSQuery {
     /**
      * Resend the query using TCP, as the response from the server exceeded the maximum length of a UDP response.
      */
-    private void handleTruncatedMessage() {
+    protected void handleTruncatedMessage() {
 
         queryLog.log("UDP response was truncated; retrying with TCP" );
 
@@ -194,7 +194,7 @@ public abstract class DNSQuery {
      *
      * @param _transport The transport (UDP or TCP) a message was received on.
      */
-    private void handleWrongTransport( final DNSTransport _transport ) {
+    protected void handleWrongTransport( final DNSTransport _transport ) {
 
         // some cleanup...
         agent.close();
@@ -227,10 +227,18 @@ public abstract class DNSQuery {
         LOGGER.finest( logMsg );
         queryLog.log( logMsg );
 
-        // add our results to the cache...
-        cache.add( responseMessage.answers           );
-        cache.add( responseMessage.authorities       );
-        cache.add( responseMessage.additionalRecords );
+        updateCacheFromMessage( responseMessage );
+    }
+
+
+    protected void updateCacheFromMessage( final DNSMessage _message ) {
+
+        Checks.required( _message );
+
+        // add the message's information to the cache...
+        cache.add( _message.answers           );
+        cache.add( _message.authorities       );
+        cache.add( _message.additionalRecords );
     }
 
 
