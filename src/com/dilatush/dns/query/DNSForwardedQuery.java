@@ -42,17 +42,17 @@ public class DNSForwardedQuery extends DNSQuery {
      * @param _id The unique identifying 32-bit integer for this query.  The DNS specifications call for this ID to help the resolver match incoming responses to the query that
      *            produced them.  In this implementation, the matching is done by the fact that each query has a unique port number associated with it, so the ID isn't needed at
      *            all for matching.  Nevertheless, it has an important purpose: it is the key for the active query map described above.
-     * @param _agents The {@link List List&lt;ServerSpec&gt;} of the parameters used to create {@link DNSServerAgent} instances that can query other DNS servers.  Note that for
-     *                forwarded queries this list is supplied by the resolver, but for recursive queries it is generated in the course of making the queries.
+     * @param _serverSpecs The {@link List List&lt;ServerSpec&gt;} of the parameters used to create {@link DNSServerAgent} instances that can query other DNS servers.  Note that
+     *                     for forwarded queries this list is supplied by the resolver, but for recursive queries it is generated in the course of making the queries.
      * @param _handler The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler that will be called when the query is completed.  Note that the handler is called
      *                 either for success or failure.
      */
     public DNSForwardedQuery( final DNSResolver _resolver, final DNSCache _cache, final DNSNIO _nio, final ExecutorService _executor,
                               final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
-                              final List<ServerSpec> _agents, final Consumer<Outcome<QueryResult>> _handler ) {
-        super( _resolver, _cache, _nio, _executor, _activeQueries, _question, _id, _agents, _handler );
+                              final List<ServerSpec> _serverSpecs, final Consumer<Outcome<QueryResult>> _handler ) {
+        super( _resolver, _cache, _nio, _executor, _activeQueries, _question, _id, _serverSpecs, _handler );
 
-        Checks.required( _agents );
+        Checks.required( _serverSpecs );
 
         queryLog.log("New forwarded query " + question );
     }

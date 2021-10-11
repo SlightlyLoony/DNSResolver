@@ -16,13 +16,14 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
+import static com.dilatush.dns.DNSResolver.*;
 import static com.dilatush.dns.message.DNSResponseCode.*;
 import static com.dilatush.dns.query.DNSTransport.UDP;
+import static com.dilatush.util.General.breakpoint;
 import static java.util.logging.Level.FINER;
 import static java.util.logging.Level.FINEST;
 
@@ -34,7 +35,7 @@ public class DNSRecursiveQuery extends DNSQuery {
     private static final Logger       LOGGER                           = General.getLogger();
     private static final long         RECURSIVE_NAME_SERVER_TIMEOUT_MS = 5000;
     private static final int          DNS_SERVER_PORT                  = 53;
-    private static final Inet4Address WILDCARD_IP;
+    private static final Inet4Address INVALID_IP;
 
         // Oh, how do I hate exceptions?  Let me count the ways...
         static {
@@ -45,7 +46,7 @@ public class DNSRecursiveQuery extends DNSQuery {
             catch( UnknownHostException _e ) {
                 // impossible; we're just making the compiler happy...
             }
-            WILDCARD_IP = wildcard;
+            INVALID_IP = wildcard;
         }
 
     private static final Outcome.Forge<QueryResult> queryOutcome = new Outcome.Forge<>();
@@ -197,19 +198,50 @@ public class DNSRecursiveQuery extends DNSQuery {
         // clear this flag, so that if we have to sub-query for a more specific label we won't think we've already done it...
         haveQueriedNSIPs = false;
 
-        xxxx
+        // if we make it here, we have enough name server IPs to actually go query for the next stage of our recursive resolution - so we make a list of server specs for
+        // name servers that we could query, and we start that process going...
+
+        // iterate over the entries in our name server IP address map, and generate server specs for those we have IP addresses for...
+        serverSpecs.clear();
+        nameServerIPMap.entrySet()
+            .stream()
+            .filter( (entry) -> entry.getValue() != INVALID_IP )                                                   // we're skipping those with the INVALID_IP...
+            .forEach( (entry) -> {
+                InetSocketAddress socket = new InetSocketAddress( entry.getValue(), DNS_SERVER_PORT );             // turn the IP address into a socket address...
+                ServerSpec spec = new ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, entry.getKey(), socket );   // get a server spec for our name server...
+                serverSpecs.add( spec );                                                                           // add it to our hoppy list of servers...
+            } );
 
 
-        queryLog.log( "Sending recursive query for " + question + " to " + agent.name + " via " + transport );
+        // now we kick things off by querying the first DNS server...
+        return queryNextDNSServer();
+   }
 
-        // figure out what agent we're going to use...
-        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
 
-        Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
+    /**
+     * Send the query to the next DNS server on the list of {@link ServerSpec}s.
+     *
+     * @return Ok unless there are no more DNS servers to query, or if the query could not be sent for some reason.
+     */
+   private Outcome<?> queryNextDNSServer() {
 
-        return sendOutcome.ok()
-                ? queryOutcome.ok( new QueryResult( queryMessage, null, queryLog ) )
-                : queryOutcome.notOk( sendOutcome.msg(), sendOutcome.cause() );
+        // if we have no more DNS servers left to query, we've got a problem...
+       if( serverSpecs.size() == 0 ) {
+           String msg = "No DNS server responded, and there are no more DNS servers to try";
+           queryLog.log( msg );
+           return outcome.notOk( msg, new DNSResolverException( msg, DNSResolverError.NO_NAME_SERVERS ) );
+       }
+
+       // figure out what agent we're going to use...
+       agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
+
+       queryLog.log( "Sending recursive query for " + question + " to " + agent.name + " via " + transport );
+
+       Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
+
+       return sendOutcome.ok()
+               ? queryOutcome.ok( new QueryResult( queryMessage, null, queryLog ) )
+               : queryOutcome.notOk( sendOutcome.msg(), new DNSResolverException( sendOutcome.msg(), sendOutcome.cause(), DNSResolverError.BAD_QUERY ) );
    }
 
 
@@ -224,16 +256,20 @@ public class DNSRecursiveQuery extends DNSQuery {
      */
    private boolean haveEnoughNameServerIPs( final DNSMessage _response ) {
 
-       // build a map of all the name servers in the response, with the name server host name as the key and the wildcard IP (which can never belong to a name server)...
+       // build a map of all the name servers in the response, with the name server host name as the key and the invalid IP (0.0.0.0, which can never belong to a name server)...
        nameServerIPMap = new HashMap<>();   // map name server host names to IPs...
-       _response.authorities.forEach( (rr) -> nameServerIPMap.put( rr.name.text, WILDCARD_IP ) );
+       _response.authorities
+               .stream()
+               .filter( (rr) -> rr instanceof NS)
+               .forEach( (rr) -> nameServerIPMap.put( ((NS)rr).nameServer.text, INVALID_IP )
+       );
 
        // associate any IP addresses in the response with the name servers...
        _response.additionalRecords.forEach( (rr) -> {
            if( nameServerIPMap.containsKey( rr.name.text ) ) {
-               if( rr instanceof A )
+               if( (rr instanceof A) && resolver.useIPv4() )
                    nameServerIPMap.put( rr.name.text, ((A)rr).address );
-               else if( rr instanceof AAAA )
+               else if( (rr instanceof AAAA) && resolver.useIPv6() )
                    nameServerIPMap.put( rr.name.text, ((AAAA)rr).address );
            }
        } );
@@ -241,7 +277,7 @@ public class DNSRecursiveQuery extends DNSQuery {
        // try resolving name server IPs from the cache, for those name server IPs we didn't get in the response...
        nameServerIPMap.entrySet()
                .stream()
-               .filter( (entry) -> { return entry.getValue() == WILDCARD_IP; } )    // the == works here, because we're looking for occurrences of the same instance...
+               .filter( (entry) -> { return entry.getValue() == INVALID_IP; } )    // the == works here, because we're looking for occurrences of the same instance...
                .forEach( (entry) -> {
 
                    // get a list of all the IPs the cache has for this name server host name...
@@ -260,11 +296,17 @@ public class DNSRecursiveQuery extends DNSQuery {
                } );
 
        // we now have one or more name servers, with zero or more associated IP addresses - time to see if we have enough, or if we need to sub-query...
-       long ipCount = nameServerIPMap.values().stream().filter( (ip) -> ip != WILDCARD_IP ).count();  // count the associated IPs...
+       long ipCount = nameServerIPMap.values().stream().filter( (ip) -> ip != INVALID_IP ).count();  // count the associated IPs...
        return (ipCount == nameServerIPMap.size()) || (ipCount >= 2);
    }
 
 
+    /**
+     * Issue sub-queries for the IP addresses (either IPv4 or IPv6, according to our configuration) for all the name servers that we have that don't already have an IP address.
+     * Note that these sub-queries will execute asynchronously, and this query will not proceed until all the sub-queries have completed or timed out.
+     *
+     * @return The outcome, which will be ok unless one or more of the sub-queries failed.
+     */
    private Outcome<?> subQueryForNameServerIPs() {
 
        // we assume a good outcome until and if we get a bad one below...
@@ -274,7 +316,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
        nameServerIPMap.entrySet()
                .stream()
-               .filter( (entry) -> entry.getValue() == WILDCARD_IP )
+               .filter( (entry) -> entry.getValue() == INVALID_IP )
                .forEach( (entry) -> {
 
                    // fire off the query for the A record...
@@ -310,6 +352,11 @@ public class DNSRecursiveQuery extends DNSQuery {
        haveQueriedNSIPs = true;
 
        return result.result;
+   }
+
+
+   protected void handleResponse( final DNSMessage _responseMsg, final DNSTransport _transport ) {
+       breakpoint();
    }
 
 
@@ -482,77 +529,77 @@ public class DNSRecursiveQuery extends DNSQuery {
 
 
     private void handleAnswers() {
-
-        LOGGER.finest( "Got some answers: " + responseMessage.answers.size() );
-
-        // first we accumulate the answers from the message we just received with any that we've received from previous queries or sub-queries...
-        answers.addAll( responseMessage.answers );
-
-        // There are several possible scenarios here, which must be checked in the order given:
-        // 1. There are zero answers, which means the query was answered but there were no results.
-        // 2. There are one or more answers, and the desired type is ANY or CNAME, or they're all the desired type. In this case, we accumulate all the answers, and we're done.
-        // 3. There are two or more answers, consisting of one or more CNAME records followed by one or more answers of the desired type.  In this case, we check for proper
-        //    CNAME chaining, accumulate all the answers, and we're done.
-        // 4. There are one or more answers, all of which are CNAME records.  In this case, the last CNAME is a referral, we accumulate all the answers, check for a CNAME
-        //    loop (which is an error), and then fire off a sub-query to resolve the referral.  The results of the sub-query are evaluated exactly as the results of the
-        //    first query.
-        // 5. There are one or more answers which are neither CNAME records nor the desired type.  This is an error.
-
-        // now we do a little analysis on our accumulated answers, so we can figure out what to do next...
-        AnswersAnalysis aa = analyzeAnswers();
-
-        // if we got no answers, we're done...
-        if( responseMessage.answers.size() == 0 ) {
-            doneWithAnswers();
-            return;
-        }
-
-        // If the desired type is ANY or CNAME, or all the records are the type we want, then we're done...
-        if( (question.qtype == DNSRRType.ANY) || (question.qtype == DNSRRType.CNAME) || (aa.desiredCount == answers.size())) {
-            doneWithAnswers();
-            return;
-        }
-
-        // if we've got one or more CNAME records followed by one or more records of our desired type, then we check for proper CNAME chaining, and we're done...
-        if( (aa.cnameCount > 0) && (aa.desiredCount > 0) && !aa.bogus ) {
-
-            // make sure our CNAME records chain properly in the order we have them, to the first record of the desired type...
-            if( !isProperChaining() )
-                return;
-
-            // otherwise, send our excellent answers back...
-            doneWithAnswers();
-            return;
-        }
-
-        // TODO: try to resolve from cache before firing off a subquery...
-        // if we have one or more CNAME records and nothing else, check for a CNAME loop, then fire a sub-query to the last (unresolved) domain...
-        if( aa.cnameCount == answers.size() ) {
-
-            // if we have a CNAME loop, that's a fatal error...
-            if( !isLoopless() )
-                return;
-
-            // send off a sub-query to get the next element of the CNAME chain, or our actual answer...
-            DNSDomainName nextDomain = ((CNAME)answers.get( answers.size() - 1 )).cname;
-            DNSRRType nextType = question.qtype;
-
-            LOGGER.finest( "Firing " + nextDomain.text + " " + nextType + " record sub-query " + subQueries.get() + " from query " + id );
-            DNSQuestion aQuestion = new DNSQuestion( nextDomain, nextType );
-            DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(),
-                    this::handleChainSubQuery );
-            recursiveQuery.initiate( UDP );
-            return;
-        }
-
-        // if we have one or more records that are neither CNAME nor our desired record type, we have an error...
-        if( aa.wrongCount > 0 ) {
-            doneWithProblem( "Unexpected record types in answers" );
-            return;
-        }
-
-        // if we get here, we have a condition that we didn't cover in the logic above - big problem...
-        doneWithProblem( "Unexpected condition in answers" );
+//
+//        LOGGER.finest( "Got some answers: " + responseMessage.answers.size() );
+//
+//        // first we accumulate the answers from the message we just received with any that we've received from previous queries or sub-queries...
+//        answers.addAll( responseMessage.answers );
+//
+//        // There are several possible scenarios here, which must be checked in the order given:
+//        // 1. There are zero answers, which means the query was answered but there were no results.
+//        // 2. There are one or more answers, and the desired type is ANY or CNAME, or they're all the desired type. In this case, we accumulate all the answers, and we're done.
+//        // 3. There are two or more answers, consisting of one or more CNAME records followed by one or more answers of the desired type.  In this case, we check for proper
+//        //    CNAME chaining, accumulate all the answers, and we're done.
+//        // 4. There are one or more answers, all of which are CNAME records.  In this case, the last CNAME is a referral, we accumulate all the answers, check for a CNAME
+//        //    loop (which is an error), and then fire off a sub-query to resolve the referral.  The results of the sub-query are evaluated exactly as the results of the
+//        //    first query.
+//        // 5. There are one or more answers which are neither CNAME records nor the desired type.  This is an error.
+//
+//        // now we do a little analysis on our accumulated answers, so we can figure out what to do next...
+//        AnswersAnalysis aa = analyzeAnswers();
+//
+//        // if we got no answers, we're done...
+//        if( responseMessage.answers.size() == 0 ) {
+//            doneWithAnswers();
+//            return;
+//        }
+//
+//        // If the desired type is ANY or CNAME, or all the records are the type we want, then we're done...
+//        if( (question.qtype == DNSRRType.ANY) || (question.qtype == DNSRRType.CNAME) || (aa.desiredCount == answers.size())) {
+//            doneWithAnswers();
+//            return;
+//        }
+//
+//        // if we've got one or more CNAME records followed by one or more records of our desired type, then we check for proper CNAME chaining, and we're done...
+//        if( (aa.cnameCount > 0) && (aa.desiredCount > 0) && !aa.bogus ) {
+//
+//            // make sure our CNAME records chain properly in the order we have them, to the first record of the desired type...
+//            if( !isProperChaining() )
+//                return;
+//
+//            // otherwise, send our excellent answers back...
+//            doneWithAnswers();
+//            return;
+//        }
+//
+//        // TODO: try to resolve from cache before firing off a subquery...
+//        // if we have one or more CNAME records and nothing else, check for a CNAME loop, then fire a sub-query to the last (unresolved) domain...
+//        if( aa.cnameCount == answers.size() ) {
+//
+//            // if we have a CNAME loop, that's a fatal error...
+//            if( !isLoopless() )
+//                return;
+//
+//            // send off a sub-query to get the next element of the CNAME chain, or our actual answer...
+//            DNSDomainName nextDomain = ((CNAME)answers.get( answers.size() - 1 )).cname;
+//            DNSRRType nextType = question.qtype;
+//
+//            LOGGER.finest( "Firing " + nextDomain.text + " " + nextType + " record sub-query " + subQueries.get() + " from query " + id );
+//            DNSQuestion aQuestion = new DNSQuestion( nextDomain, nextType );
+//            DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(),
+//                    this::handleChainSubQuery );
+//            recursiveQuery.initiate( UDP );
+//            return;
+//        }
+//
+//        // if we have one or more records that are neither CNAME nor our desired record type, we have an error...
+//        if( aa.wrongCount > 0 ) {
+//            doneWithProblem( "Unexpected record types in answers" );
+//            return;
+//        }
+//
+//        // if we get here, we have a condition that we didn't cover in the logic above - big problem...
+//        doneWithProblem( "Unexpected condition in answers" );
     }
 
 
@@ -595,7 +642,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         // turn our IP addresses into agent parameters...
         serverSpecs.clear();
-        nextNameServerIPs.forEach( ( ip) -> serverSpecs.add( new DNSResolver.ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
+        nextNameServerIPs.forEach( ( ip) -> serverSpecs.add( new ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, ip.getHostAddress(), new InetSocketAddress( ip, DNS_SERVER_PORT ) ) ) );
 
         // figure out what agent we're going to use...
         agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
