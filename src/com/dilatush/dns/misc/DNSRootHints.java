@@ -8,12 +8,12 @@ import com.dilatush.dns.rr.NS;
 import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
 import com.dilatush.util.Streams;
+import com.dilatush.util.ip.IPAddress;
+import com.dilatush.util.ip.IPv4Address;
+import com.dilatush.util.ip.IPv6Address;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.Inet4Address;
-import java.net.Inet6Address;
-import java.net.InetAddress;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -246,50 +246,40 @@ public class DNSRootHints {
 
                 case "A" -> {
 
-                    try {
-                        // get the bare IP address...
-                        InetAddress address = InetAddress.getByName( rrdStr );
+                    // get the bare IP address...
+                    Outcome<IPAddress> addrOutcome = IPAddress.fromString( rrdStr );
+                    if( addrOutcome.notOk() )
+                        yield rrOutcome.notOk( "Problem creating A resource record: " + addrOutcome.msg() );
+                    IPAddress address = addrOutcome.info();
+                    if( !(address instanceof IPv4Address) )
+                        yield rrOutcome.notOk( "Problem creating A resource record: IP address is not a v4 address" );
 
-                        // add the domain name to it...
-                        address = InetAddress.getByAddress( dnStr, address.getAddress() );
+                    // get the resource record instance...
+                    Outcome<A> iao = A.create( dn, ttl, (IPv4Address) address );
 
-                        // get the resource record instance...
-                        Outcome<A> iao = A.create( dn, ttl, (Inet4Address) address );
-
-                        // report the result...
-                        yield iao.ok()
-                                ? rrOutcome.ok( iao.info() )
-                                : rrOutcome.notOk( "Problem creating A resource record: " + iao.msg(), iao.cause() );
-                    }
-
-                    // this really shouldn't happen unless somehow the root hints have a malformed IP address string...
-                    catch( Exception _e ) {
-                        yield rrOutcome.notOk( "Problem creating A resource record: " + _e.getMessage(), _e );
-                    }
-                }
+                    // report the result...
+                    yield iao.ok()
+                            ? rrOutcome.ok( iao.info() )
+                            : rrOutcome.notOk( "Problem creating A resource record: " + iao.msg(), iao.cause() );
+               }
 
                 case "AAAA" -> {
 
-                    try {
-                        // get the bare IP address...
-                        InetAddress address = InetAddress.getByName( rrdStr );
+                    // get the bare IP address...
+                    Outcome<IPAddress> addrOutcome = IPAddress.fromString( rrdStr );
+                    if( addrOutcome.notOk() )
+                        yield rrOutcome.notOk( "Problem creating AAAA resource record: " + addrOutcome.msg() );
+                    IPAddress address = addrOutcome.info();
+                    if( !(address instanceof IPv6Address) )
+                        yield rrOutcome.notOk( "Problem creating AAAA resource record: IP address is not a v6 address" );
 
-                        // add the domain name to it...
-                        address = InetAddress.getByAddress( dnStr, address.getAddress() );
+                    // get the resource record instance...
+                    Outcome<AAAA> iao = AAAA.create( dn, ttl, (IPv6Address) address );
 
-                        // get the resource record instance...
-                        Outcome<AAAA> iao = AAAA.create( dn, ttl, (Inet6Address) address );
-
-                        // report the result...
-                        yield iao.ok()
-                                ? rrOutcome.ok( iao.info() )
-                                : rrOutcome.notOk( "Problem creating AAAA resource record: " + iao.msg(), iao.cause() );
-                    }
-
-                    // this really shouldn't happen unless somehow the root hints have a malformed IP address string...
-                    catch( Exception _e ) {
-                        yield rrOutcome.notOk( "Problem creating AAAA resource record: " + _e.getMessage(), _e );
-                    }
+                    // report the result...
+                    yield iao.ok()
+                            ? rrOutcome.ok( iao.info() )
+                            : rrOutcome.notOk( "Problem creating AAAA resource record: " + iao.msg(), iao.cause() );
                 }
 
                 case "NS" -> {

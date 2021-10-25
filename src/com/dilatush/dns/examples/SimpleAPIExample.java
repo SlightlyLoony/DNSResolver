@@ -3,8 +3,8 @@ package com.dilatush.dns.examples;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.ip.IPv4Address;
 
-import java.net.Inet4Address;
 import java.util.List;
 
 import static com.dilatush.util.General.breakpoint;
@@ -24,7 +24,7 @@ public class SimpleAPIExample {
         DNSResolverAPI api = new DNSResolverAPI( DNSResolver.getDefaultRecursiveResolver() );
 
         // get the IP addresses for the FQDN "yahoo.com"...
-        Outcome<List<Inet4Address>> ipo = api.resolveIPv4Addresses( "yahoo.com" );
+        Outcome<List<IPv4Address>> ipo = api.resolveIPv4Addresses( "yahoo.com" );
 
         // check to see whether the resolution succeeded or failed...
         if( ipo.ok() ) {

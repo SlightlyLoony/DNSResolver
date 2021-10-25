@@ -3,6 +3,7 @@ package com.dilatush.dns.examples;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.ip.IPv4Address;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -25,7 +26,7 @@ public class Test {
         InetSocketAddress socket = new InetSocketAddress( ip, 53 );
         DNSResolverAPI api = new DNSResolverAPI( DNSResolver.getDefaultRecursiveResolver() );
 
-        Outcome<List<Inet4Address>> result = api.resolveIPv4Addresses( "www.cnn.com" );
+        Outcome<List<IPv4Address>> result = api.resolveIPv4Addresses( "www.cnn.com" );
 
         breakpoint();
     }

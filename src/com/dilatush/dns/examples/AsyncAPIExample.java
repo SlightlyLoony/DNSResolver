@@ -2,14 +2,14 @@ package com.dilatush.dns.examples;
 
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
-import com.dilatush.dns.misc.DNSServerException;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.misc.DNSServerException;
 import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.ip.IPAddress;
+import com.dilatush.util.ip.IPv4Address;
+import com.dilatush.util.ip.IPv6Address;
 
-import java.net.Inet4Address;
-import java.net.Inet6Address;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.List;
@@ -114,10 +114,10 @@ public class AsyncAPIExample {
             fqdn = _fqdn;
         }
 
-        private void handler( final Outcome<List<Inet4Address>> _result ) {
+        private void handler( final Outcome<List<IPv4Address>> _result ) {
             if( _result.ok() )
                 if( _result.info().size() > 0 )
-                    _result.info().forEach( (ip) -> System.out.println( "IPv4:      ok: " + ip.toString() ) );
+                    _result.info().forEach( (ip) -> System.out.println( "IPv4:      ok: " + ip ) );
                 else
                     System.out.println( "IPv4:      ok: " + fqdn + " has no IPv4 addresses" );
             else
@@ -152,10 +152,10 @@ public class AsyncAPIExample {
             fqdn = _fqdn;
         }
 
-        private void handler( final Outcome<List<Inet6Address>> _result ) {
+        private void handler( final Outcome<List<IPv6Address>> _result ) {
             if( _result.ok() )
                 if( _result.info().size() > 0 )
-                    _result.info().forEach( (ip) -> System.out.println( "IPv6:      ok: " + ip.toString() ) );
+                    _result.info().forEach( (ip) -> System.out.println( "IPv6:      ok: " + ip ) );
                 else
                     System.out.println( "IPv6:      ok: " + fqdn + " has no IPv6 addresses" );
             else
@@ -190,7 +190,7 @@ public class AsyncAPIExample {
             fqdn = _fqdn;
         }
 
-        private void handler( final Outcome<List<InetAddress>> _result ) {
+        private void handler( final Outcome<List<IPAddress>> _result ) {
             if( _result.ok() )
                 if( _result.info().size() > 0 )
                     _result.info().forEach( (ip) -> System.out.println( "IP:      ok: " + ip.toString() ) );

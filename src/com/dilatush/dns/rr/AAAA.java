@@ -9,13 +9,10 @@ import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
 import com.dilatush.dns.misc.DNSResolverError;
 import com.dilatush.dns.misc.DNSResolverException;
-import com.dilatush.dns.misc.DNSUtil;
 import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.ip.IPv6Address;
 
-import java.net.Inet6Address;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -32,7 +29,7 @@ public class AAAA extends DNSResourceRecord {
     private static final Outcome.Forge<?>    encodeOutcome = new Outcome.Forge<>();
 
     /** The IPv6 address associated with this DNS domain name. */
-    public final Inet6Address address;
+    public final IPv6Address address;
 
 
     /**
@@ -46,7 +43,7 @@ public class AAAA extends DNSResourceRecord {
      */
     private AAAA(
             final DNSDomainName _name, final DNSRRClass _klass, final long _ttl, final int _dataLength,
-            final Inet6Address _address ) {
+            final IPv6Address _address ) {
 
         super( new Init( _name, DNSRRType.AAAA, _klass, _ttl, _dataLength ) );
         address = _address;
@@ -65,7 +62,7 @@ public class AAAA extends DNSResourceRecord {
      */
     public static Outcome<AAAA> create(
             final DNSDomainName _name, final DNSRRClass _klass, final int _ttl,
-            final Inet6Address _address ) {
+            final IPv6Address _address ) {
 
         Checks.required( _name, _klass, _address );
 
@@ -84,7 +81,7 @@ public class AAAA extends DNSResourceRecord {
      */
     public static Outcome<AAAA> create(
             final DNSDomainName _name, final int _ttl,
-            final Inet6Address _address ) {
+            final IPv6Address _address ) {
         return create( _name, DNSRRClass.IN, _ttl, _address);
     }
 
@@ -109,15 +106,8 @@ public class AAAA extends DNSResourceRecord {
         // decode the IPv6 address...
         byte[] addrBytes = new byte[16];
         _msgBuffer.get( addrBytes );
-        try {
-            Inet6Address addr = (Inet6Address)InetAddress.getByAddress( _init.name().text, addrBytes );
-            return outcome.ok( new AAAA(_init.name(), _init.klass(), _init.ttl(), _init.dataLength(), addr ) );
-        }
-
-        // this should be impossible, as it is only thrown if the wrong number of bytes is supplied...
-        catch (UnknownHostException e) {
-            throw new IllegalStateException( "Impossible UnknownHostException" );
-        }
+        IPv6Address addr = IPv6Address.fromBytes( addrBytes ).info();
+        return outcome.ok( new AAAA(_init.name(), _init.klass(), _init.ttl(), _init.dataLength(), addr ) );
     }
 
 
@@ -173,9 +163,7 @@ public class AAAA extends DNSResourceRecord {
         if( _dn.equals( name ) )
             return this;
 
-        // they're different, so change the host in the IP address and return a new instance with the new domain name and normalized IP...
-        Inet6Address ip = DNSUtil.setHostName( address, _dn.text );
-        return new AAAA( _dn, klass, ttl, dataLength, ip );
+        return new AAAA( _dn, klass, ttl, dataLength, address );
     }
 
 
@@ -185,6 +173,6 @@ public class AAAA extends DNSResourceRecord {
      * @return a string representing this instance.
      */
     public String toString() {
-        return type.name() + ": " + address.getHostAddress() + super.toString();
+        return type.name() + ": " + address + super.toString();
     }
 }

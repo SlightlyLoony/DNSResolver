@@ -254,7 +254,7 @@ public abstract class DNSResourceRecord {
 
     /**
      * Returns a new {@link DNSResourceRecord} instance, a clone of this instance except with the given domain name.  If the new domain name is the same as the
-     *      * existing domain name, this instance is returned.
+     * existing domain name, this instance is returned.
      *
      * @param _dn The new {@link DNSDomainName}.
      * @return A new {@link DNSResourceRecord} instance, a clone of this instance except with the given domain name.

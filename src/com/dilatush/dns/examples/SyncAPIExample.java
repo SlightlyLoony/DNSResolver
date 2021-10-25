@@ -2,14 +2,14 @@ package com.dilatush.dns.examples;
 
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
-import com.dilatush.dns.misc.DNSServerException;
 import com.dilatush.dns.message.DNSRRType;
+import com.dilatush.dns.misc.DNSServerException;
 import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.ip.IPAddress;
+import com.dilatush.util.ip.IPv4Address;
+import com.dilatush.util.ip.IPv6Address;
 
-import java.net.Inet4Address;
-import java.net.Inet6Address;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -110,7 +110,7 @@ public class SyncAPIExample {
 
         Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
 
-            Outcome<List<Inet4Address>> ip4o = _api.resolveIPv4Addresses( fqdn );
+            Outcome<List<IPv4Address>> ip4o = _api.resolveIPv4Addresses( fqdn );
             if( ip4o.ok() )
                 if( ip4o.info().size() > 0 )
                     ip4o.info().forEach( (ip) -> System.out.println( "      ok: " + ip.toString() ) );
@@ -132,15 +132,15 @@ public class SyncAPIExample {
 
         Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
 
-            Outcome<List<Inet6Address>> ip6o = _api.resolveIPv6Addresses( fqdn );
-            List<InetAddress> inetAddressList = (ip6o.info() == null) ? null : new ArrayList<>( ip6o.info() );
-            Outcome<List<InetAddress>> ipo = new Outcome<>( ip6o.ok(), ip6o.msg(), ip6o.cause(), inetAddressList );
+            Outcome<List<IPv6Address>> ip6o = _api.resolveIPv6Addresses( fqdn );
+            List<IPAddress> inetAddressList = (ip6o.info() == null) ? null : new ArrayList<>( ip6o.info() );
+            Outcome<List<IPAddress>> ipo = new Outcome<>( ip6o.ok(), ip6o.msg(), ip6o.cause(), inetAddressList );
             printResult( fqdn, ipo );
         } );
     }
 
 
-    private static void printResult( final String fqdn, final Outcome<List<InetAddress>> _ipo ) {
+    private static void printResult( final String fqdn, final Outcome<List<IPAddress>> _ipo ) {
 
         if( _ipo.ok() )
             if( _ipo.info().size() > 0 )
@@ -162,7 +162,7 @@ public class SyncAPIExample {
 
         Arrays.stream( _fqdn ).sequential().forEach( (fqdn) -> {
 
-            Outcome<List<InetAddress>> ipo = _api.resolveIPAddresses( fqdn );
+            Outcome<List<IPAddress>> ipo = _api.resolveIPAddresses( fqdn );
             printResult( fqdn, ipo );
         } );
     }

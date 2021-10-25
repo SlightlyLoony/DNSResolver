@@ -7,6 +7,8 @@ import com.dilatush.dns.message.DNSRRType;
 import com.dilatush.dns.rr.*;
 import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.ip.IPv4Address;
+import com.dilatush.util.ip.IPv6Address;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -27,23 +29,20 @@ public class DNSUtil {
 
 
     /**
-     * Returns a list of all the IPv4 addresses found in any A records contained in the given list of DNS resource records.  The resulting {@link Inet4Address} instances
-     * will have a hostname with the given queried FQDN, effectively hiding any CNAME chain that was followed to the A record.
+     * Returns a list of all the IPv4 addresses found in any A records contained in the given list of DNS resource records.
      *
      * @param _rrs The list of DNS resource records to search.
-     * @param _queriedFQDN The originally queried FQDN (before any CNAME chains were followed).
      * @return A list of IPv4 addresses found in any A records contained in the given list of DNS resource records.
      */
-    public static List<Inet4Address> extractIPv4Addresses( final List<DNSResourceRecord> _rrs, final String _queriedFQDN ) {
+    public static List<IPv4Address> extractIPv4Addresses( final List<DNSResourceRecord> _rrs ) {
 
-        Checks.required( _rrs, _queriedFQDN );
+        Checks.required( _rrs );
 
-        List<Inet4Address> result = new ArrayList<>();           // a place for our results...
+        List<IPv4Address> result = new ArrayList<>();            // a place for our results...
         _rrs.stream()                                            // get a stream of resource records from the given list...
                 .filter( (rr) -> rr instanceof A )               // look at just the A records...
                 .forEach( (rr) -> {                              // for each A record we found...
-                    Inet4Address ip = ((A)rr).address;           // get the IP address, which may not have the right hostname...
-                    ip = setHostName( ip, _queriedFQDN );        // set the right hostname...
+                    IPv4Address ip = ((A)rr).address;            // get the IP address, which may not have the right hostname...
                     result.add( ip );                            // add the massaged IP to our list of results...
                 } );
         return result;
@@ -106,23 +105,20 @@ public class DNSUtil {
 
 
     /**
-     * Returns a list of all the IPv6 addresses found in any AAAA records contained in the given list of DNS resource records.  The resulting {@link Inet6Address} instances
-     * will have a hostname with the given queried FQDN, effectively hiding any CNAME chain that was followed to the AAAA record.
+     * Returns a list of all the IPv6 addresses found in any AAAA records contained in the given list of DNS resource records.
      *
      * @param _rrs The list of DNS resource records to search.
-     * @param _queriedFQDN The originally queried FQDN (before any CNAME chains were followed).
      * @return A list of IPv6 addresses found in any A records contained in the given list of DNS resource records.
      */
-    public static List<Inet6Address> extractIPv6Addresses( final List<DNSResourceRecord> _rrs, final String _queriedFQDN ) {
+    public static List<IPv6Address> extractIPv6Addresses( final List<DNSResourceRecord> _rrs ) {
 
-        Checks.required( _rrs, _queriedFQDN );
+        Checks.required( _rrs );
 
-        List<Inet6Address> result = new ArrayList<>();           // a place for our results...
+        List<IPv6Address> result = new ArrayList<>();            // a place for our results...
         _rrs.stream()                                            // get a stream of resource records from the given list...
                 .filter( (rr) -> rr instanceof AAAA )            // look at just the AAAA records...
                 .forEach( (rr) -> {                              // for each AAAA record we found...
-                    Inet6Address ip = ((AAAA)rr).address;        // get the IP address, which may not have the right hostname...
-                    ip = setHostName( ip, _queriedFQDN );        // set the right hostname...
+                    IPv6Address ip = ((AAAA)rr).address;         // get the IP address, which may not have the right hostname...
                     result.add( ip );                            // add the massaged IP to our list of results...
                 } );
         return result;

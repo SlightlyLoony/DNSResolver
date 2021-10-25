@@ -9,10 +9,10 @@ import com.dilatush.dns.rr.DNSResourceRecord;
 import com.dilatush.util.Checks;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.ip.IPAddress;
+import com.dilatush.util.ip.IPv4Address;
+import com.dilatush.util.ip.IPv6Address;
 
-import java.net.Inet4Address;
-import java.net.Inet6Address;
-import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Semaphore;
@@ -46,7 +46,7 @@ public class DNSResolverAPI {
     private static final Logger LOGGER = General.getLogger();
 
     private static final Outcome.Forge<?>                  outcome     = new Outcome.Forge<>();
-    private static final Outcome.Forge<List<InetAddress>>  ipOutcome   = new Outcome.Forge<>();
+    private static final Outcome.Forge<List<IPAddress>>    ipOutcome   = new Outcome.Forge<>();
 
     /** The {@link DNSResolver} wrapped by this instance. */
     public final DNSResolver        resolver;
@@ -183,11 +183,11 @@ public class DNSResolverAPI {
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv4 addresses.</p>
      *
-     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet4Address&gt;&gt;&gt;} handler that will be called with the result of this query.
+     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;IPv4Address&gt;&gt;&gt;} handler that will be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv4 addresses.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
-    public Outcome<?> resolveIPv4Addresses( final Consumer<Outcome<List<Inet4Address>>> _handler, final String _fqdn  ) {
+    public Outcome<?> resolveIPv4Addresses( final Consumer<Outcome<List<IPv4Address>>> _handler, final String _fqdn  ) {
         Checks.required( _handler );
         return resolveIPv4AddressesImpl( _handler, null, _fqdn, null );
     }
@@ -204,12 +204,12 @@ public class DNSResolverAPI {
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv4 addresses.</p>
      *
-     * @param _handler  The {@link BiConsumer BiConsumer&lt;Outcome&lt;List&lt;Inet4Address&gt;&gt;,Object&gt;} handler that will be called with the result of this query.
+     * @param _handler  The {@link BiConsumer BiConsumer&lt;Outcome&lt;List&lt;IPv4Address&gt;&gt;,Object&gt;} handler that will be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv4 addresses.
      * @param _attachment The attachment for the query.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
-    public Outcome<?> resolveIPv4Addresses( final BiConsumer<Outcome<List<Inet4Address>>,Object> _handler, final String _fqdn, final Object _attachment ) {
+    public Outcome<?> resolveIPv4Addresses( final BiConsumer<Outcome<List<IPv4Address>>,Object> _handler, final String _fqdn, final Object _attachment ) {
         Checks.required( _handler );
         return resolveIPv4AddressesImpl( null, _handler, _fqdn, _attachment );
     }
@@ -224,21 +224,21 @@ public class DNSResolverAPI {
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv4 addresses.</p>
      *
-     * @param _handler1  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet4Address&gt;&gt;&gt;} handler that may be called with the result of this query.
-     * @param _handler2 The {@link BiConsumer BiConsumer&lt;Outcome&lt;List&lt;Inet4Address&gt;&gt;,Object&gt;} handler that may be called with the result of this query.
+     * @param _handler1  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;IPv4Address&gt;&gt;&gt;} handler that may be called with the result of this query.
+     * @param _handler2 The {@link BiConsumer BiConsumer&lt;Outcome&lt;List&lt;IPv4Address&gt;&gt;,Object&gt;} handler that may be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv4 addresses.
      * @param _attachment The optional attachment, used if handler1 is {@code null} and handler2 is specified.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
-    private Outcome<?> resolveIPv4AddressesImpl( final Consumer<Outcome<List<Inet4Address>>> _handler1, final BiConsumer<Outcome<List<Inet4Address>>,Object> _handler2,
+    private Outcome<?> resolveIPv4AddressesImpl( final Consumer<Outcome<List<IPv4Address>>> _handler1, final BiConsumer<Outcome<List<IPv4Address>>,Object> _handler2,
                                                  final String _fqdn, final Object _attachment ) {
 
         Checks.required( _fqdn );
 
         // set up the handler that will process the raw results of the query...
-        AsyncHandler<List<Inet4Address>> handler = (_handler1 != null)
-                ? new AsyncHandler<>( _handler1, (qr) -> extractIPv4Addresses( qr.response().answers, _fqdn )              )
-                : new AsyncHandler<>( _handler2, (qr) -> extractIPv4Addresses( qr.response().answers, _fqdn ), _attachment );
+        AsyncHandler<List<IPv4Address>> handler = (_handler1 != null)
+                ? new AsyncHandler<>( _handler1, (qr) -> extractIPv4Addresses( qr.response().answers )              )
+                : new AsyncHandler<>( _handler2, (qr) -> extractIPv4Addresses( qr.response().answers ), _attachment );
 
         // get the question we're going to ask the DNS...
         Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.A );
@@ -259,11 +259,11 @@ public class DNSResolverAPI {
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv6 addresses.</p>
      *
-     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
+     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;IPv6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv6 addresses.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
-    public Outcome<?> resolveIPv6Addresses( final Consumer<Outcome<List<Inet6Address>>> _handler, final String _fqdn  ) {
+    public Outcome<?> resolveIPv6Addresses( final Consumer<Outcome<List<IPv6Address>>> _handler, final String _fqdn  ) {
         Checks.required( _handler );
         return resolveIPv6AddressesImpl( _handler, null, _fqdn, null );
     }
@@ -280,12 +280,12 @@ public class DNSResolverAPI {
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv6 addresses.</p>
      *
-     * @param _handler  The {@link BiConsumer BiConsumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;,Object&gt;} handler that will be called with the result of this query.
+     * @param _handler  The {@link BiConsumer BiConsumer&lt;Outcome&lt;List&lt;IPv6Address&gt;&gt;,Object&gt;} handler that will be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv6 addresses.
      * @param _attachment The attachment for the query.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
-    public Outcome<?> resolveIPv6Addresses( final BiConsumer<Outcome<List<Inet6Address>>,Object> _handler, final String _fqdn, final Object _attachment ) {
+    public Outcome<?> resolveIPv6Addresses( final BiConsumer<Outcome<List<IPv6Address>>,Object> _handler, final String _fqdn, final Object _attachment ) {
         Checks.required( _handler );
         return resolveIPv6AddressesImpl( null, _handler, _fqdn, _attachment );
     }
@@ -300,21 +300,21 @@ public class DNSResolverAPI {
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv6 addresses.</p>
      *
-     * @param _handler1  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;&gt;} handler that may be called with the result of this query.
-     * @param _handler2  The {@link Consumer BiConsumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;,Object&gt;} handler that may be called with the result of this query.
+     * @param _handler1  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;IPv6Address&gt;&gt;&gt;} handler that may be called with the result of this query.
+     * @param _handler2  The {@link Consumer BiConsumer&lt;Outcome&lt;List&lt;IPv6Address&gt;&gt;,Object&gt;} handler that may be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv6 addresses.
      * @param _attachment The attachment for the query.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
-    private Outcome<?> resolveIPv6AddressesImpl( final Consumer<Outcome<List<Inet6Address>>> _handler1, final BiConsumer<Outcome<List<Inet6Address>>,Object> _handler2,
+    private Outcome<?> resolveIPv6AddressesImpl( final Consumer<Outcome<List<IPv6Address>>> _handler1, final BiConsumer<Outcome<List<IPv6Address>>,Object> _handler2,
                                                  final String _fqdn, final Object _attachment  ) {
 
         Checks.required( _fqdn );
 
         // set up the handler that will process the raw results of the query...
-        AsyncHandler<List<Inet6Address>> handler = (_handler1 != null)
-                ? new AsyncHandler<>( _handler1, (qr) -> extractIPv6Addresses( qr.response().answers, _fqdn )              )
-                : new AsyncHandler<>( _handler2, (qr) -> extractIPv6Addresses( qr.response().answers, _fqdn ), _attachment );
+        AsyncHandler<List<IPv6Address>> handler = (_handler1 != null)
+                ? new AsyncHandler<>( _handler1, (qr) -> extractIPv6Addresses( qr.response().answers )              )
+                : new AsyncHandler<>( _handler2, (qr) -> extractIPv6Addresses( qr.response().answers ), _attachment );
 
         // get the question we're going to ask the DNS...
         Outcome<DNSQuestion> qo = DNSUtil.getQuestion( _fqdn, DNSRRType.AAAA );
@@ -335,11 +335,11 @@ public class DNSResolverAPI {
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IP addresses.</p>
      *
-     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
+     * @param _handler  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;IPv6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IP addresses.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
-    public Outcome<?> resolveIPAddresses( final Consumer<Outcome<List<InetAddress>>> _handler, final String _fqdn  ) {
+    public Outcome<?> resolveIPAddresses( final Consumer<Outcome<List<IPAddress>>> _handler, final String _fqdn  ) {
         Checks.required( _handler );
         return resolveIPAddressesImpl( _handler, null, _fqdn, null );
     }
@@ -356,11 +356,11 @@ public class DNSResolverAPI {
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IP addresses.</p>
      *
-     * @param _handler  The {@link BiConsumer BiConsumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;,Object&gt;} handler that will be called with the result of this query.
+     * @param _handler  The {@link BiConsumer BiConsumer&lt;Outcome&lt;List&lt;IPv6Address&gt;&gt;,Object&gt;} handler that will be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IP addresses.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
-    public Outcome<?> resolveIPAddresses( final BiConsumer<Outcome<List<InetAddress>>,Object> _handler, final String _fqdn, final Object _attachment ) {
+    public Outcome<?> resolveIPAddresses( final BiConsumer<Outcome<List<IPAddress>>,Object> _handler, final String _fqdn, final Object _attachment ) {
         Checks.required( _handler );
         return resolveIPAddressesImpl( null, _handler, _fqdn, _attachment );
     }
@@ -376,19 +376,19 @@ public class DNSResolverAPI {
      * that was resolved from the resolver's cache.  The outcome argument to the handler will be "not ok" if there was a problem querying other DNS servers, or if the FQDN does
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IP addresses.</p>
      *
-     * @param _handler1  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
-     * @param _handler2  The {@link BiConsumer BiConsumer&lt;Outcome&lt;List&lt;Inet6Address&gt;&gt;,Object&gt;} handler that will be called with the result of this query.
+     * @param _handler1  The {@link Consumer Consumer&lt;Outcome&lt;List&lt;IPv6Address&gt;&gt;&gt;} handler that will be called with the result of this query.
+     * @param _handler2  The {@link BiConsumer BiConsumer&lt;Outcome&lt;List&lt;IPv6Address&gt;&gt;,Object&gt;} handler that will be called with the result of this query.
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IP addresses.
      * @param _attachment The attachment for the query.
      * @return The {@link Outcome Outcome&lt;?&gt;} that is "not ok" only if there was a problem initiating the query.
      */
-    private Outcome<?> resolveIPAddressesImpl( final Consumer<Outcome<List<InetAddress>>> _handler1, final BiConsumer<Outcome<List<InetAddress>>,Object> _handler2,
+    private Outcome<?> resolveIPAddressesImpl( final Consumer<Outcome<List<IPAddress>>> _handler1, final BiConsumer<Outcome<List<IPAddress>>,Object> _handler2,
                                                final String _fqdn, final Object _attachment ) {
 
         Checks.required( _fqdn );
 
         // where we're going to stuff the results...
-        List<InetAddress> result = new ArrayList<>();
+        List<IPAddress> result = new ArrayList<>();
 
         // where we keep track of whether we've already received one result...
         AtomicInteger resultCount = new AtomicInteger();
@@ -397,7 +397,7 @@ public class DNSResolverAPI {
         // both queries at once, then wait until we get two answers.  We return with an error if either query had errors being sent...
 
         // create our special handlers, to receive both IPv4 and IPv6 results...
-        Consumer<Outcome<List<Inet4Address>>> handler4 = (ipso) -> {
+        Consumer<Outcome<List<IPv4Address>>> handler4 = (ipso) -> {
             if( ipso.ok() )
                 handleIPResults( _handler1, _handler2, ipso.info(), _attachment, result, resultCount );
             else if( _handler1 != null )
@@ -405,7 +405,7 @@ public class DNSResolverAPI {
             else
                 _handler2.accept( ipOutcome.notOk( ipso.msg(), ipso.cause() ), _attachment );
         };
-        Consumer<Outcome<List<Inet6Address>>> handler6 = (ipso) -> {
+        Consumer<Outcome<List<IPv6Address>>> handler6 = (ipso) -> {
             if( ipso.ok() )
                 handleIPResults( _handler1, _handler2, ipso.info(), _attachment, result, resultCount );
             else if( _handler1 != null )
@@ -427,9 +427,9 @@ public class DNSResolverAPI {
     }
 
 
-    private synchronized void handleIPResults( final Consumer<Outcome<List<InetAddress>>> _handler1, final BiConsumer<Outcome<List<InetAddress>>,Object> _handler2,
-                                               final List<? extends InetAddress> _received, final Object _attachment,
-                                               final List<InetAddress> _result, final AtomicInteger _resultCount ) {
+    private synchronized void handleIPResults( final Consumer<Outcome<List<IPAddress>>> _handler1, final BiConsumer<Outcome<List<IPAddress>>,Object> _handler2,
+                                               final List<? extends IPAddress> _received, final Object _attachment,
+                                               final List<IPAddress> _result, final AtomicInteger _resultCount ) {
         _result.addAll( _received );
         int resultCount = _resultCount.incrementAndGet();
         if( resultCount == 2 ) {
@@ -622,18 +622,18 @@ public class DNSResolverAPI {
 
     /**
      * Synchronously resolve the Internet Protocol version 4 (IPv4) addresses for the given fully-qualified domain name (FQDN), returning an
-     * {@link Outcome Outcome&lt;List&lt;Inet4Address&gt;&gt;} with the result.  The outcome will be "not ok" if there was a problem querying other DNS servers, or if the FQDN
+     * {@link Outcome Outcome&lt;List&lt;IPv4Address&gt;&gt;} with the result.  The outcome will be "not ok" if there was a problem querying other DNS servers, or if the FQDN
      * does not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv4 addresses.
      *
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv4 addresses.
-     * @return The {@link Outcome Outcome&lt;List&lt;Inet4Address&gt;&gt;} with the result of this query.
+     * @return The {@link Outcome Outcome&lt;List&lt;IPv4Address&gt;&gt;} with the result of this query.
      */
-    public Outcome<List<Inet4Address>> resolveIPv4Addresses( final String _fqdn ) {
+    public Outcome<List<IPv4Address>> resolveIPv4Addresses( final String _fqdn ) {
 
         Checks.required( _fqdn );
 
         // set up the handler that will process wait for the asynchronous result...
-        SyncHandler<List<Inet4Address>> handler = new SyncHandler<>();
+        SyncHandler<List<IPv4Address>> handler = new SyncHandler<>();
 
         // initiate an asynchronous query...
         Outcome<?> ao = resolveIPv4Addresses( handler::handler, _fqdn );
@@ -649,18 +649,18 @@ public class DNSResolverAPI {
 
     /**
      * Synchronously resolve the Internet Protocol version 6 (IPv6) addresses for the given fully-qualified domain name (FQDN), returning an
-     * {@link Outcome Outcome&lt;List&lt;Inet6Address&gt;&gt;} with the result.  The outcome will be "not ok" if there was a problem querying other DNS servers, or if the FQDN
+     * {@link Outcome Outcome&lt;List&lt;IPv6Address&gt;&gt;} with the result.  The outcome will be "not ok" if there was a problem querying other DNS servers, or if the FQDN
      * does not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IPv6 addresses.
      *
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv6 addresses.
-     * @return The {@link Outcome Outcome&lt;List&lt;Inet6Address&gt;&gt;} with the result of this query.
+     * @return The {@link Outcome Outcome&lt;List&lt;IPv6Address&gt;&gt;} with the result of this query.
      */
-    public Outcome<List<Inet6Address>> resolveIPv6Addresses( final String _fqdn ) {
+    public Outcome<List<IPv6Address>> resolveIPv6Addresses( final String _fqdn ) {
 
         Checks.required( _fqdn );
 
         // set up the handler that will process wait for the asynchronous result...
-        SyncHandler<List<Inet6Address>> handler = new SyncHandler<>();
+        SyncHandler<List<IPv6Address>> handler = new SyncHandler<>();
 
         // initiate an asynchronous query...
         Outcome<?> ao = resolveIPv6Addresses( handler::handler, _fqdn );
@@ -683,14 +683,14 @@ public class DNSResolverAPI {
      * not exist.  Otherwise, it will be "ok", and the information will be a list of zero or more IP addresses.</p>
     *
      * @param _fqdn The FQDN (such as "www.google.com") to resolve into zero or more IPv6 addresses.
-     * @return The {@link Outcome Outcome&lt;List&lt;InetAddress&gt;&gt;} with the result of this query.
+     * @return The {@link Outcome Outcome&lt;List&lt;IPAddress&gt;&gt;} with the result of this query.
      */
-    public Outcome<List<InetAddress>> resolveIPAddresses( final String _fqdn ) {
+    public Outcome<List<IPAddress>> resolveIPAddresses( final String _fqdn ) {
 
         Checks.required( _fqdn );
 
         // set up the handler that will process wait for the asynchronous result...
-        SyncHandler<List<InetAddress>> handler = new SyncHandler<>();
+        SyncHandler<List<IPAddress>> handler = new SyncHandler<>();
 
         // initiate an asynchronous query...
         Outcome<?> ao = resolveIPAddresses( handler::handler, _fqdn );

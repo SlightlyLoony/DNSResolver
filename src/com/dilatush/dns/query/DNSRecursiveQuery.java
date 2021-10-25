@@ -10,6 +10,8 @@ import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.ip.IPAddress;
+import com.dilatush.util.ip.IPv4Address;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -36,7 +38,6 @@ public class DNSRecursiveQuery extends DNSQuery {
     private static final Logger       LOGGER                           = General.getLogger();
     private static final long         RECURSIVE_NAME_SERVER_TIMEOUT_MS = 5000;
     private static final int          DNS_SERVER_PORT                  = 53;
-    private static final Inet4Address INVALID_IP;
 
         // Oh, how do I hate exceptions?  Let me count the ways...
         static {
@@ -47,18 +48,17 @@ public class DNSRecursiveQuery extends DNSQuery {
             catch( UnknownHostException _e ) {
                 // impossible; we're just making the compiler happy...
             }
-            INVALID_IP = wildcard;
         }
 
     private static final Outcome.Forge<QueryResult> queryOutcome = new Outcome.Forge<>();
 
 
-    private final List<InetAddress>       nextNameServerIPs;     // IP addresses of the next name servers to query...
+    private final List<IPAddress>         nextNameServerIPs;     // IP addresses of the next name servers to query...
     private final AtomicInteger           subQueries;            // the number of sub-queries currently running...
     private final List<DNSResourceRecord> answers;               // the answers to this query...
 
     private       boolean                 haveQueriedNSIPs;      // true if we have already queried for name server IP addresses...
-    private       Map<String,InetAddress> nameServerIPMap;       // map of name servers to IP addresses, with wild card IP for those we don't have addresses for...
+    private       Map<String,IPAddress>   nameServerIPMap;       // map of name servers to IP addresses, with wild card IP for those we don't have addresses for...
 
 
     /**
@@ -209,11 +209,11 @@ public class DNSRecursiveQuery extends DNSQuery {
         serverSpecs.clear();
         nameServerIPMap.entrySet()
             .stream()
-            .filter( (entry) -> entry.getValue() != INVALID_IP )                                                   // we're skipping those with the INVALID_IP...
+            .filter( (entry) -> entry.getValue() != IPv4Address.WILDCARD )                                              // we're skipping those with the INVALID_IP...
             .forEach( (entry) -> {
-                InetSocketAddress socket = new InetSocketAddress( entry.getValue(), DNS_SERVER_PORT );             // turn the IP address into a socket address...
-                ServerSpec spec = new ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, entry.getKey(), socket );   // get a server spec for our name server...
-                serverSpecs.add( spec );                                                                           // add it to our hoppy list of servers...
+                InetSocketAddress socket = new InetSocketAddress( entry.getValue().toInetAddress(), DNS_SERVER_PORT );  // turn the IP address into a socket address...
+                ServerSpec spec = new ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, entry.getKey(), socket );        // get a server spec for our name server...
+                serverSpecs.add( spec );                                                                                // add it to our hoppy list of servers...
             } );
         queryLog.log( "Starting query of \"" + cacheResponse.authorities.get( 0 ).name.text + "\" authorities; " + serverSpecs.size() + " name server authorities available" );
 
@@ -265,7 +265,7 @@ public class DNSRecursiveQuery extends DNSQuery {
        _response.authorities
                .stream()
                .filter( (rr) -> rr instanceof NS)
-               .forEach( (rr) -> nameServerIPMap.put( ((NS)rr).nameServer.text, INVALID_IP )
+               .forEach( (rr) -> nameServerIPMap.put( ((NS)rr).nameServer.text, IPv4Address.WILDCARD )
        );
 
        // associate any IP addresses in the response with the name servers...
@@ -281,7 +281,7 @@ public class DNSRecursiveQuery extends DNSQuery {
        // try resolving name server IPs from the cache, for those name server IPs we didn't get in the response...
        nameServerIPMap.entrySet()
                .stream()
-               .filter( (entry) -> { return entry.getValue() == INVALID_IP; } )    // the == works here, because we're looking for occurrences of the same instance...
+               .filter( (entry) -> { return entry.getValue() == IPv4Address.WILDCARD; } )    // the == works here, because we're looking for occurrences of the same instance...
                .forEach( (entry) -> {
 
                    // get a list of all the IPs the cache has for this name server host name...
@@ -294,13 +294,13 @@ public class DNSRecursiveQuery extends DNSQuery {
                    // if we actually got some IPs, associate the first one with the name server...
                    if( ips.size() > 0 ) {
                        DNSResourceRecord iprr = ips.get( 0 );
-                       InetAddress nsip = (iprr instanceof A) ? ((A)iprr).address : ((AAAA)iprr).address;
+                       IPAddress nsip = (iprr instanceof A) ? ((A)iprr).address : ((AAAA)iprr).address;
                        entry.setValue( nsip );
                    }
                } );
 
        // we now have one or more name servers, with zero or more associated IP addresses - time to see if we have enough, or if we need to sub-query...
-       long ipCount = nameServerIPMap.values().stream().filter( (ip) -> ip != INVALID_IP ).count();  // count the associated IPs...
+       long ipCount = nameServerIPMap.values().stream().filter( (ip) -> ip != IPv4Address.WILDCARD ).count();  // count the associated IPs...
        return (ipCount == nameServerIPMap.size()) || (ipCount >= 2);
    }
 
@@ -320,7 +320,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
        nameServerIPMap.entrySet()
                .stream()
-               .filter( (entry) -> entry.getValue() == INVALID_IP )
+               .filter( (entry) -> entry.getValue() == IPv4Address.WILDCARD )
                .forEach( (entry) -> {
 
                    // fire off the query for the A record...
@@ -801,7 +801,7 @@ public class DNSRecursiveQuery extends DNSQuery {
      * @param _ips The list of IP addresses to append to.
      * @param _rrs The list of DNS resource records to get IP addresses from.
      */
-    private void addIPs( final List<InetAddress> _ips, final List<DNSResourceRecord> _rrs ) {
+    private void addIPs( final List<IPAddress> _ips, final List<DNSResourceRecord> _rrs ) {
 
         Checks.required( _ips, _rrs );
 

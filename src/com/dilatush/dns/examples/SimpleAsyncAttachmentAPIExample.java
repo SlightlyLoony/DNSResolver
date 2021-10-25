@@ -3,9 +3,8 @@ package com.dilatush.dns.examples;
 import com.dilatush.dns.DNSResolver;
 import com.dilatush.dns.DNSResolverAPI;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.ip.IPv4Address;
 
-import java.net.Inet4Address;
-import java.net.UnknownHostException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,11 +19,11 @@ import static com.dilatush.util.General.initLogging;
 @SuppressWarnings( "unused" )
 public class SimpleAsyncAttachmentAPIExample {
 
-    private static final Map<String,Inet4Address> fqdns = new ConcurrentHashMap<>();
+    private static final Map<String,IPv4Address> fqdns = new ConcurrentHashMap<>();
 
     private static final Semaphore waiter = new Semaphore( 0 );
 
-    public static void main( final String[] _args ) throws UnknownHostException, InterruptedException {
+    public static void main( final String[] _args ) throws InterruptedException {
 
         initLogging( "example-logging.properties" );
 
@@ -32,13 +31,12 @@ public class SimpleAsyncAttachmentAPIExample {
         DNSResolverAPI api = new DNSResolverAPI( DNSResolver.getDefaultRecursiveResolver() );
 
         // make a map with a few FQDNs in it; we want to resolve these to IP addresses.  We start by putting 0.0.0.0 as the address, 'cause we know that isn't real...
-        Inet4Address naught = (Inet4Address) Inet4Address.getByName( "0.0.0.0" );
-        fqdns.put( "www.amd.com",    naught );
-        fqdns.put( "www.hp.com",     naught );
-        fqdns.put( "www.google.com", naught );
-        fqdns.put( "www.apple.com",  naught );
-        fqdns.put( "www.adobe.com",  naught );
-        fqdns.put( "www.intel.com",  naught );
+        fqdns.put( "www.amd.com",    IPv4Address.WILDCARD );
+        fqdns.put( "www.hp.com",     IPv4Address.WILDCARD );
+        fqdns.put( "www.google.com", IPv4Address.WILDCARD );
+        fqdns.put( "www.apple.com",  IPv4Address.WILDCARD );
+        fqdns.put( "www.adobe.com",  IPv4Address.WILDCARD );
+        fqdns.put( "www.intel.com",  IPv4Address.WILDCARD );
 
         // fire off queries for each of the above FQDNs, in each case attaching the FQDN as the key...
         // we're using the asynchronous API, so these will all resolve concurrently...
@@ -48,13 +46,13 @@ public class SimpleAsyncAttachmentAPIExample {
         waiter.acquire( fqdns.size() );
 
         // print the list of IPv4 addresses we received...
-        fqdns.forEach( (fqdn,ip) -> System.out.println( fqdn + ": " + ip.getHostAddress() ) );
+        fqdns.forEach( (fqdn,ip) -> System.out.println( fqdn + ": " + ip ) );
 
         breakpoint();
     }
 
 
-    private static void handler( final Outcome<List<Inet4Address>> _outcome, final Object _attachment ) {
+    private static void handler( final Outcome<List<IPv4Address>> _outcome, final Object _attachment ) {
 
         // if we had a bad outcome, print the reason and leave...
         if( _outcome.notOk() ) {
@@ -67,7 +65,7 @@ public class SimpleAsyncAttachmentAPIExample {
         String fqdn = (String) _attachment;
 
         // get our list of IPv4 addresses...
-        List<Inet4Address> ips = _outcome.info();
+        List<IPv4Address> ips = _outcome.info();
 
         // if we got at least one address, update the map with it...
         if( ips.size() > 0 ) {

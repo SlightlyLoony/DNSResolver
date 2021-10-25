@@ -4,18 +4,15 @@ package com.dilatush.dns.rr;
 //   | See RFC 1035 for details. |
 //   +---------------------------+
 
-import com.dilatush.dns.misc.DNSResolverError;
-import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.dns.message.DNSDomainName;
 import com.dilatush.dns.message.DNSRRClass;
 import com.dilatush.dns.message.DNSRRType;
-import com.dilatush.dns.misc.DNSUtil;
+import com.dilatush.dns.misc.DNSResolverError;
+import com.dilatush.dns.misc.DNSResolverException;
 import com.dilatush.util.Checks;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.ip.IPv4Address;
 
-import java.net.Inet4Address;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -32,7 +29,7 @@ public class A extends DNSResourceRecord {
     private static final Outcome.Forge<?> encodeOutcome = new Outcome.Forge<>();
 
     /** The IPv4 address associated with this DNS domain name. */
-    public final Inet4Address address;
+    public final IPv4Address address;
 
 
     /**
@@ -47,7 +44,7 @@ public class A extends DNSResourceRecord {
      */
     private A(
             final DNSDomainName _name, final DNSRRClass _klass, final long _ttl, final int _dataLength,
-            final Inet4Address _address ) {
+            final IPv4Address _address ) {
 
         super( new Init( _name, DNSRRType.A, _klass, _ttl, _dataLength ) );
         address = _address;
@@ -66,7 +63,7 @@ public class A extends DNSResourceRecord {
      */
     public static Outcome<A> create(
             final DNSDomainName _name, final DNSRRClass _klass, final int _ttl,
-            final Inet4Address _address ) {
+            final IPv4Address _address ) {
 
         Checks.required( _name, _klass, _address );
 
@@ -85,7 +82,7 @@ public class A extends DNSResourceRecord {
      */
     public static Outcome<A> create(
             final DNSDomainName _name, final int _ttl,
-            final Inet4Address _address ) {
+            final IPv4Address _address ) {
         return create( _name, DNSRRClass.IN, _ttl, _address);
     }
 
@@ -110,15 +107,9 @@ public class A extends DNSResourceRecord {
         // decode the IPv4 address...
         byte[] addrBytes = new byte[4];
         _msgBuffer.get( addrBytes );
-        try {
-            Inet4Address addr = (Inet4Address)InetAddress.getByAddress( _init.name().text, addrBytes );
-            return outcome.ok( new A(_init.name(), _init.klass(), _init.ttl(), _init.dataLength(), addr ) );
-        }
 
-        // this should be impossible, as it is only thrown if the wrong number of bytes is supplied...
-        catch (UnknownHostException e) {
-            throw new IllegalStateException( "Impossible UnknownHostException" );
-        }
+        IPv4Address addr = IPv4Address.fromBytes( addrBytes ).info();
+        return outcome.ok( new A(_init.name(), _init.klass(), _init.ttl(), _init.dataLength(), addr ) );
     }
 
 
@@ -174,9 +165,7 @@ public class A extends DNSResourceRecord {
         if( _dn.equals( name ) )
             return this;
 
-        // they're different, so change the host in the IP address and return a new instance with the new domain name and normalized IP...
-        Inet4Address ip = DNSUtil.setHostName( address, _dn.text );
-        return new A( _dn, klass, ttl, dataLength, ip );
+        return new A( _dn, klass, ttl, dataLength, address );
     }
 
 
@@ -186,6 +175,6 @@ public class A extends DNSResourceRecord {
      * @return a string representing this instance.
      */
     public String toString() {
-        return type.name() + ": " + address.getHostAddress() + super.toString();
+        return type.name() + ": " + address + super.toString();
     }
 }
