@@ -25,6 +25,9 @@ import static com.dilatush.dns.misc.DNSResolverError.NETWORK;
  */
 public class DNSForwardedQuery extends DNSQuery {
 
+    // TODO: make FSM lightweight - no dispatch thread, no scheduler...
+    // TODO: move init code to IDLE on-entry action...
+
     private static final Logger LOGGER = General.getLogger();
 
 
