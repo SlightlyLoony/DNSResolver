@@ -8,6 +8,9 @@ public enum DNSResolverError {
     /** Encountered a problem when trying to use the network. */
     NETWORK,
 
+    /** DNS query timed out. */
+    TIMEOUT,
+
     /** Root hints could not be read. */
     ROOT_HINTS_PROBLEMS,
 

@@ -105,20 +105,8 @@ public abstract class DNSQuery {
      * query is trying to resolve.
      *
      * @param _initialTransport The initial transport (UDP or TCP) to use when resolving this query.
-     * @return The {@link Outcome Outcome&lt;?&gt;} of this operation.
      */
-    public abstract Outcome<?> initiate( final DNSTransport _initialTransport );
-
-
-    /**
-     * Send the query to the DNS server, returning an {@link Outcome Outcome&lt;?&gt;} with the result.  Generally the outcome will be "not ok" only if there is some problem
-     * with the network or connection to a specific DNS server.  This method may be called repeatedly during the resolution of a single query.  It is always called once when the
-     * query is initiated.  It may be called again if the queried DNS server fails to respond, or responds with an error, or (during a recursive query) to query for authorities
-     * and name server IP address resolution.
-     *
-     * @return The {@link Outcome Outcome&lt;?&gt;} result.
-     */
-    protected abstract Outcome<?> query();
+    public abstract void initiate( final DNSTransport _initialTransport );
 
 
     /**
@@ -265,13 +253,8 @@ public abstract class DNSQuery {
             queryLog.log( "Response was " + _responseCode + "; trying another DNS server" );
 
             // resend the same query, to another server...
-            Outcome<?> qo = query();
+            //query();
 
-            // if we sent the query without problem, we're done...
-            if( qo.ok() )
-                return;
-
-            queryLog.log( "Problem sending query to " + agent.name + ": " + qo.msg() );
         }
 
         // if we get here, we ran out of servers to try, so report a sad outcome and leave...
@@ -321,11 +304,7 @@ public abstract class DNSQuery {
         // while we've got more servers to try...
         while( !serverSpecs.isEmpty() ) {
 
-            // resend the query to the next server...
-            Outcome<?> qo = query();
-
-            // if it was sent ok, we're done...
-            if( qo.ok() )
+            // query();
                 return;
         }
 

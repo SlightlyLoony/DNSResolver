@@ -169,9 +169,12 @@ public class DNSResolverAPI {
         if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
 
         // fire off the query...
-        return (_handler1 != null)
-                ? query( qo.info(), handler::handler1              )
-                : query( qo.info(), handler::handler2, _attachment );
+        if(_handler1 != null)
+            query( qo.info(), handler::handler1 );
+        else
+            query( qo.info(), handler::handler2, _attachment );
+
+        return outcome.ok();
     }
 
 
@@ -245,9 +248,12 @@ public class DNSResolverAPI {
         if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
 
         // fire off the query...
-        return (_handler1 != null)
-                ? query( qo.info(), handler::handler1              )
-                : query( qo.info(), handler::handler2, _attachment );
+        if(_handler1 != null)
+            query( qo.info(), handler::handler1 );
+        else
+            query( qo.info(), handler::handler2, _attachment );
+
+        return outcome.ok();
     }
 
 
@@ -321,9 +327,12 @@ public class DNSResolverAPI {
         if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
 
         // fire off the query...
-        return (_handler1 != null)
-                ? query( qo.info(), handler::handler1              )
-                : query( qo.info(), handler::handler2, _attachment );
+        if(_handler1 != null)
+            query( qo.info(), handler::handler1 );
+        else
+            query( qo.info(), handler::handler2, _attachment );
+
+        return outcome.ok();
     }
 
 
@@ -508,9 +517,12 @@ public class DNSResolverAPI {
         if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
 
         // fire off the query...
-        return (_handler1 != null)
-                ? query( qo.info(), handler::handler1              )
-                : query( qo.info(), handler::handler2, _attachment );
+        if(_handler1 != null)
+            query( qo.info(), handler::handler1 );
+        else
+            query( qo.info(), handler::handler2, _attachment );
+
+        return outcome.ok();
     }
 
 
@@ -582,9 +594,12 @@ public class DNSResolverAPI {
         if( qo.notOk() ) return outcome.notOk( qo.msg(), qo.cause() );
 
         // fire off the query...
-        return (_handler1 != null)
-                ? query( qo.info(), handler::handler1              )
-                : query( qo.info(), handler::handler2, _attachment );
+        if(_handler1 != null)
+            query( qo.info(), handler::handler1 );
+        else
+            query( qo.info(), handler::handler2, _attachment );
+
+        return outcome.ok();
     }
 
 
@@ -769,18 +784,18 @@ public class DNSResolverAPI {
      * @param _handler The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler that will be called with the result of the query.
      * @return The outcome of this query.
      */
-    private Outcome<?> query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler ) {
+    private void query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler ) {
 
         // which query method we call on the resolver depends on whether we're forwarding or recursively resolving...
         if( resolver.hasServers() ) {
 
             // make the forwarding call...
-            return resolver.query( _question, _handler, initialTransport, serverSelection );
+            resolver.query( _question, _handler, initialTransport, serverSelection );
         }
         else {
 
             // make the recursive call...
-            return resolver.query( _question, _handler, initialTransport );
+            resolver.query( _question, _handler, initialTransport );
         }
     }
 
@@ -796,18 +811,18 @@ public class DNSResolverAPI {
      * @param _handler The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler that will be called with the result of the query.
      * @return The outcome of this query.
      */
-    private Outcome<?> query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler, final Object _attachment ) {
+    private void query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler, final Object _attachment ) {
 
         // which query method we call on the resolver depends on whether we're forwarding or recursively resolving...
         if( resolver.hasServers() ) {
 
             // make the forwarding call...
-            return resolver.query( _question, _handler, initialTransport, serverSelection );
+            resolver.query( _question, _handler, initialTransport, serverSelection );
         }
         else {
 
             // make the recursive call...
-            return resolver.query( _question, _handler, initialTransport, _attachment );
+            resolver.query( _question, _handler, initialTransport, _attachment );
         }
     }
 

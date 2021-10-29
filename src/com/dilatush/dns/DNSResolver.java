@@ -4,6 +4,7 @@ package com.dilatush.dns;
 // TODO: make sure all "not ok" responses are using codes (DNSResponseCode or DNSResolverError)
 // TODO: Get rid of protected everywhere I can
 // TODO: Comments and Javadocs...
+// TODO: convert to FSM...
 
 
 import com.dilatush.dns.message.DNSQuestion;
@@ -116,25 +117,25 @@ public class DNSResolver {
     // forwarded query...
     // only one question per query!
     // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
-    public Outcome<?> query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler, final DNSTransport _initialTransport,
+    public void query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler, final DNSTransport _initialTransport,
                              final DNSServerSelection _serverSelection, final Object _attachment ) {
 
         Checks.required( _handler );
 
-        return queryImpl( _question, new HandlerWrapper( _handler, _attachment )::handle, _initialTransport, _serverSelection );
+        queryImpl( _question, new HandlerWrapper( _handler, _attachment )::handle, _initialTransport, _serverSelection );
     }
 
 
-    public Outcome<?> query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport,
+    public void query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport,
                              final DNSServerSelection _serverSelection ) {
 
         Checks.required( _handler );
 
-        return queryImpl( _question, new HandlerWrapper( _handler )::handle, _initialTransport, _serverSelection );
+        queryImpl( _question, new HandlerWrapper( _handler )::handle, _initialTransport, _serverSelection );
     }
 
 
-    private Outcome<?> queryImpl( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler,
+    private void queryImpl( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler,
                               final DNSTransport _initialTransport, final DNSServerSelection _serverSelection ) {
 
         Checks.required( _question, _initialTransport, _serverSelection );
@@ -143,37 +144,37 @@ public class DNSResolver {
 
         DNSQuery query = new DNSForwardedQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), servers, _handler );
 
-        return query.initiate( _initialTransport );
+        query.initiate( _initialTransport );
     }
 
 
     // recursive query...
     // only one question per query!
     // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
-    public Outcome<?> query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler,
+    public void query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler,
                              final DNSTransport _initialTransport, final Object _attachment ) {
 
         Checks.required( _handler );
 
-        return queryImpl( _question, new HandlerWrapper( _handler, _attachment )::handle, _initialTransport );
+        queryImpl( _question, new HandlerWrapper( _handler, _attachment )::handle, _initialTransport );
     }
 
 
-    public Outcome<?> query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport ) {
+    public void query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport ) {
 
         Checks.required( _handler );
 
-        return queryImpl( _question, new HandlerWrapper( _handler )::handle, _initialTransport );
+        queryImpl( _question, new HandlerWrapper( _handler )::handle, _initialTransport );
     }
 
 
-    private Outcome<?> queryImpl( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport ) {
+    private void queryImpl( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport ) {
 
         Checks.required( _question, _initialTransport );
 
         DNSQuery query = new DNSRecursiveQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), _handler );
 
-        return query.initiate( _initialTransport );
+        query.initiate( _initialTransport );
     }
 
 

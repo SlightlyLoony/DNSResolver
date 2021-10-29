@@ -101,7 +101,7 @@ public class DNSRecursiveQuery extends DNSQuery {
      * @param _initialTransport The initial transport (UDP or TCP) to use when resolving this query.
      * @return The {@link Outcome Outcome&lt;?&gt;} of this operation.
      */
-    public Outcome<?> initiate( final DNSTransport _initialTransport ) {
+    public void initiate( final DNSTransport _initialTransport ) {
 
         Checks.required( _initialTransport, "initialTransport");
 
@@ -110,7 +110,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
         initialTransport = _initialTransport;
 
-        return query();
+        query();
     }
 
 
@@ -301,7 +301,7 @@ public class DNSRecursiveQuery extends DNSQuery {
 
        // we now have one or more name servers, with zero or more associated IP addresses - time to see if we have enough, or if we need to sub-query...
        long ipCount = nameServerIPMap.values().stream().filter( (ip) -> ip != IPv4Address.WILDCARD ).count();  // count the associated IPs...
-       return (ipCount == nameServerIPMap.size()) || (ipCount >= 2);
+       return (ipCount == nameServerIPMap.size()) || (ipCount >= 1);  // TODO: what should this number be???
    }
 
 
@@ -332,9 +332,7 @@ public class DNSRecursiveQuery extends DNSQuery {
                        DNSQuestion aQuestion = new DNSQuestion( DNSDomainName.fromString( entry.getKey() ).info(), DNSRRType.A );
                        DNSRecursiveQuery recursiveQuery
                                = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
-                       Outcome<?> resultInt = recursiveQuery.initiate( UDP );
-                       if( resultInt.notOk() )
-                           result.result = resultInt;
+                       recursiveQuery.initiate( UDP );
                    }
 
                    // fire off the query for the AAAA record...
@@ -346,9 +344,7 @@ public class DNSRecursiveQuery extends DNSQuery {
                        DNSQuestion aQuestion = new DNSQuestion( DNSDomainName.fromString( entry.getKey() ).info(), DNSRRType.AAAA );
                        DNSRecursiveQuery recursiveQuery
                                = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
-                       Outcome<?> resultInt = recursiveQuery.initiate( UDP );
-                       if( resultInt.notOk() )
-                           result.result = resultInt;
+                       recursiveQuery.initiate( UDP );
                    }
        } );
 
@@ -419,7 +415,7 @@ public class DNSRecursiveQuery extends DNSQuery {
            }
        }
 
-       // if it's OK, authoritative, and we have at least one answer, then we've finished our recursive journey and it's time to give our caller what he asked for...
+       // if it's OK, authoritative, and we have at least one answer, then we've finished our recursive journey, and it's time to give our caller what he asked for...
        else if( (responseMessage.responseCode == OK) && (responseMessage.answers.size() > 0) && responseMessage.authoritativeAnswer ) {
 
            updateCacheFromMessage( responseMessage );
@@ -428,12 +424,12 @@ public class DNSRecursiveQuery extends DNSQuery {
 
        // if it's a NAME_ERROR, and authoritative, then it's time to disappoint our caller...
        else if( (responseMessage.responseCode == NAME_ERROR) && responseMessage.authoritativeAnswer ) {
-
+// TODO: complete
        }
 
        // otherwise, it's something we don't understand, so log it and tell our caller we've failed...
        else {
-
+// TODO: complete
        }
 
 
