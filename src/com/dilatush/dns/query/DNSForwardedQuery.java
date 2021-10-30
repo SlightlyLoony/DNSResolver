@@ -22,6 +22,7 @@ import com.dilatush.util.fsm.events.FSMEvent;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static com.dilatush.dns.message.DNSResponseCode.NAME_ERROR;
@@ -165,26 +166,6 @@ public class DNSForwardedQuery extends DNSQuery {
 
 
     /**
-     * Invoked on entry to the QUERY state, to actually send the query to the DNS server.
-     * @param _state The state being entered, in this case QUERY.
-     */
-    private void queryServer( final FSMState<State,Event> _state ) {
-
-        // get an agent...
-        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
-
-        queryLog.log("Sending forwarded query to " + agent.name + " via " + transport );
-
-        // now actually send that query...
-        Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
-
-        // if we had a problem sending the query, then fire off a SEND_PROBLEM event with the attached outcome...
-        if( sendOutcome.notOk() )
-            _state.fsm.onEvent( _state.fsm.event( Event.SEND_PROBLEM, new ProblemDescription( sendOutcome.msg(), sendOutcome.cause() )) );
-    }
-
-
-    /**
      * Invoked on entry to all terminal states, to shut down the query.
      *
      * @param _state The state being entered.
@@ -192,7 +173,12 @@ public class DNSForwardedQuery extends DNSQuery {
     private void shutdown( final FSMState<State,Event> _state ) {
 
         queryLog.log( "Shutting down query" );
-        agent.close();
+
+        // the agent can be null, if the query was resolved from cache...
+        if( agent != null)
+            agent.close();
+
+        // remove our reference, so this query can be garbage-collected...
         activeQueries.remove( (short) id );
     }
 
@@ -261,7 +247,7 @@ public class DNSForwardedQuery extends DNSQuery {
 
         // if we got a name error, and the response is authoritative, then the name doesn't exist...
         if( responseMessage.responseCode == NAME_ERROR ) {
-            queryLog.log( "Response was NAME_ERROR and authoritative, so queried name does not exist" );
+            queryLog.log( "Response was NAME_ERROR, so queried name does not exist" );
             return _fsm.event( Event.NAME_ERROR );
         }
 
@@ -322,8 +308,42 @@ public class DNSForwardedQuery extends DNSQuery {
      * @param _transition The transition that triggered this action, in this case always QUERY::TRUNCATED_UDP.
      * @param _event The event that triggered this action.
      */
-    private void setTCP( final FSMTransition<State,Event> _transition, FSMEvent<Event> _event ) {
+    private void requeryTCP( final FSMTransition<State,Event> _transition, FSMEvent<Event> _event ) {
+
         transport = TCP;
+
+        LOGGER.finer( "Resending forwarded query to " + agent.name + " via " + transport );
+        queryLog.log( "Resending forwarded query to " + agent.name + " via " + transport );
+
+        // now actually send that query...
+        Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
+
+        // if we had a problem sending the query, then fire off a SEND_PROBLEM event with the attached outcome...
+        if( sendOutcome.notOk() )
+            _transition.fsm.onEvent( _transition.fsm.event( Event.SEND_PROBLEM, new ProblemDescription( sendOutcome.msg(), sendOutcome.cause() )) );
+    }
+
+
+    /**
+     * Transition action on IDLE::NO_CACHE or QUERY::MORE_SERVERS, to actually send the query to the DNS server.
+     *
+     * @param _transition The transition that triggered this action, in this case either IDLE::NO_CACHE or QUERY::MORE_SERVERS.
+     * @param _event The event that triggered this action.
+     */
+    private void queryServer(  final FSMTransition<State,Event> _transition, FSMEvent<Event> _event  ) {
+
+        // get an agent...
+        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
+
+        LOGGER.finer( "Sending forwarded query to " + agent.name + " via " + transport );
+        queryLog.log( "Sending forwarded query to " + agent.name + " via " + transport );
+
+        // now actually send that query...
+        Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
+
+        // if we had a problem sending the query, then fire off a SEND_PROBLEM event with the attached outcome...
+        if( sendOutcome.notOk() )
+            _transition.fsm.onEvent( _transition.fsm.event( Event.SEND_PROBLEM, new ProblemDescription( sendOutcome.msg(), sendOutcome.cause() )) );
     }
 
 
@@ -396,6 +416,28 @@ public class DNSForwardedQuery extends DNSQuery {
     }
 
 
+    /**
+     * Simple event listener to log events seen by the FSM.
+     *
+     * @param _event The event.
+     */
+    private void eventListener( final FSMEvent<Event> _event ) {
+        Object data = _event.getData();
+        String dataStr = (data == null) ? "" : ", data: " + data;
+        LOGGER.log( Level.FINEST, "Event: " + _event.event + dataStr );
+    }
+
+
+    /**
+     * Simple state change listener to log state changes within the FSM.
+     *
+     * @param _state The state.
+     */
+    private void stateChangeListener( final State _state ) {
+        LOGGER.log( Level.FINEST, "State changed to: " + _state );
+    }
+
+
     //----------------------------------------------------------//
     //  E n d   F i n i t e   S t a t e   M a c h i n e         //
     //----------------------------------------------------------//
@@ -448,19 +490,18 @@ public class DNSForwardedQuery extends DNSQuery {
 
         // set up our on-entry state actions...
         spec.setStateOnEntryAction( State.IDLE,                       this::init        );
-        spec.setStateOnEntryAction( State.QUERY,                      this::queryServer );
         spec.setStateOnEntryAction( State.ERROR_TERMINATION,          this::shutdown    );
         spec.setStateOnEntryAction( State.NAME_NOT_FOUND_TERMINATION, this::shutdown    );
         spec.setStateOnEntryAction( State.ANSWER_TERMINATION,         this::shutdown    );
 
         // add all the FSM state transitions for our FSM...
-        spec.addTransition( State.IDLE,           Event.NO_CACHE,            null,                   State.QUERY                       );
+        spec.addTransition( State.IDLE,           Event.NO_CACHE,            this::queryServer,      State.QUERY                       );
         spec.addTransition( State.QUERY,          Event.SEND_PROBLEM,        this::notifyError,      State.ERROR_TERMINATION           );
         spec.addTransition( State.QUERY,          Event.TIMEOUT,             this::notifyTimeout,    State.ERROR_TERMINATION           );
         spec.addTransition( State.QUERY,          Event.ERROR,               this::notifyError,      State.ERROR_TERMINATION           );
         spec.addTransition( State.IDLE,           Event.ERROR,               this::notifyError,      State.ERROR_TERMINATION           );
-        spec.addTransition( State.QUERY,          Event.TRUNCATED_UDP,       this::setTCP,           State.QUERY                       );
-        spec.addTransition( State.QUERY,          Event.MORE_SERVERS,        null,                   State.QUERY                       );
+        spec.addTransition( State.QUERY,          Event.TRUNCATED_UDP,       this::requeryTCP,       State.QUERY                       );
+        spec.addTransition( State.QUERY,          Event.MORE_SERVERS,        this::queryServer,      State.QUERY                       );
         spec.addTransition( State.QUERY,          Event.NAME_ERROR,          this::notifyNameError,  State.NAME_NOT_FOUND_TERMINATION  );
         spec.addTransition( State.QUERY,          Event.ANSWER,              this::notifyAnswer,     State.ANSWER_TERMINATION          );
         spec.addTransition( State.IDLE,           Event.ANSWER,              this::notifyAnswer,     State.ANSWER_TERMINATION          );
@@ -471,6 +512,10 @@ public class DNSForwardedQuery extends DNSQuery {
         spec.addEventTransform( Event.RESPONSE_PROBLEM, this::problemAnalysis );
         spec.addEventTransform( Event.TRUNCATED_TCP,    this::problemAnalysis );
         spec.addEventTransform( Event.UNEXPECTED,       this::problemAnalysis );
+
+        // add our listeners...
+        spec.setEventListener( this::eventListener );
+        spec.setStateChangeListener( this::stateChangeListener );
 
         // we're done with the spec, so use it to create the actual FSM and return it...
         return new FSM<>( spec );

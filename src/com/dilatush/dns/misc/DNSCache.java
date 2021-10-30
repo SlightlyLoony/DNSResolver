@@ -145,7 +145,7 @@ public class DNSCache {
 
         // if the query is for type ANY, we'll fail, because we can't tell if the cache has all records...
         if( _queryMessage.getQuestion().qtype == ANY )
-            return _queryMessage.getSyntheticNotOKResponse( NAME_ERROR );
+            return _queryMessage.getSyntheticOKResponse( new ArrayList<>( 0 ) );
 
         // if we can resolve this query from the cache, return the response with all the answers...
         List<DNSResourceRecord> answers = resolveAnswers( _queryMessage.getQuestion() );
