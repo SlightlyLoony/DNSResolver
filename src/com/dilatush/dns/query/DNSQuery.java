@@ -1,7 +1,6 @@
 package com.dilatush.dns.query;
 
 import com.dilatush.dns.DNSResolver;
-import com.dilatush.dns.DNSResolver.ServerSpec;
 import com.dilatush.dns.message.DNSMessage;
 import com.dilatush.dns.message.DNSQuestion;
 import com.dilatush.dns.message.DNSResponseCode;
@@ -27,6 +26,8 @@ import static com.dilatush.dns.misc.DNSResolverError.RECEIVED_MESSAGE_ON_WRONG_T
 import static com.dilatush.dns.query.DNSTransport.TCP;
 import static com.dilatush.dns.query.DNSTransport.UDP;
 
+// TODO: move all forwarded- or recursive-specific methods and fields out of this class
+// TODO: get rid of unused code
 /**
  * Abstract base class for query implementations.
  */
@@ -44,12 +45,10 @@ public abstract class DNSQuery {
     protected        final int                             id;                  // the ID for this query...
     protected        final DNSQuestion                     question;            // the question being answered by this query...
     protected        final Consumer<Outcome<QueryResult>>  handler;             // the client's handler for this query's results...
-    protected        final List<ServerSpec>                serverSpecs;         // the specs for the DNS servers available to respond to this query...
     protected        final QueryLog                        queryLog;            // the query log for this query (and any sub-queries)...
 
     protected              DNSServerAgent                  agent;               // the agent that communicates with a DNS server...
     protected              DNSTransport                    transport;           // the current transport in use (UDP or TCP)...
-    protected              DNSTransport                    initialTransport;    // the initial transport to use (UDP or TCP)...
 
     protected              DNSMessage                      queryMessage;        // the query message sent to the DNS server...
     protected              DNSMessage                      responseMessage;     // the response message received from the DNS server...
@@ -70,14 +69,12 @@ public abstract class DNSQuery {
      * @param _id The unique identifying 32-bit integer for this query.  The DNS specifications call for this ID to help the resolver match incoming responses to the query that
      *            produced them.  In this implementation, the matching is done by the fact that each query has a unique port number associated with it, so the ID isn't needed at
      *            all for matching.  Nevertheless, it has an important purpose: it is the key for the active query map described above.
-     * @param _serverSpecs The {@link List List&lt;ServerSpec&gt;} of the parameters used to create {@link DNSServerAgent} instances that can query other DNS servers.  Note that
-     *                     for forwarded queries this list is supplied by the resolver, but for recursive queries it is generated in the course of making the queries.
      * @param _handler The {@link Consumer Consumer&lt;Outcome&lt;QueryResult&gt;&gt;} handler that will be called when the query is completed.  Note that the handler is called
      *                 either for success or failure.
      */
     protected DNSQuery( final DNSResolver _resolver, final DNSCache _cache, final DNSNIO _nio, final ExecutorService _executor,
                         final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
-                        final List<ServerSpec> _serverSpecs, final Consumer<Outcome<QueryResult>> _handler ) {
+                        final Consumer<Outcome<QueryResult>> _handler ) {
 
         Checks.required( _resolver, _cache, _nio, _executor, _activeQueries, _question, _handler );
 
@@ -88,7 +85,6 @@ public abstract class DNSQuery {
         activeQueries   = _activeQueries;
         question        = _question;
         id              = _id;
-        serverSpecs     = _serverSpecs;
         handler         = _handler;
         queryLog        = new QueryLog();
 
@@ -100,13 +96,11 @@ public abstract class DNSQuery {
 
 
     /**
-     * Initiates a query using the given transport (UDP or TCP).  Note that a call to this method may result in several messages to DNS servers and several responses from them.
+     * Initiates a query using UDP transport.  Note that a call to this method may result in several messages to DNS servers and several responses from them.
      * This may happen if a queried DNS server doesn't respond within the timeout time, or if a series of DNS servers must be queried to get the answer to the question this
      * query is trying to resolve.
-     *
-     * @param _initialTransport The initial transport (UDP or TCP) to use when resolving this query.
      */
-    public abstract void initiate( final DNSTransport _initialTransport );
+    public abstract void initiate();
 
 
     /**
@@ -246,16 +240,16 @@ public abstract class DNSQuery {
             handleNameError();
             return;
         }
-
-        // otherwise, if we have more servers to try, fire off queries until one of them works, or we run out of servers to try...
-        else while( !serverSpecs.isEmpty() ) {
-
-            queryLog.log( "Response was " + _responseCode + "; trying another DNS server" );
-
-            // resend the same query, to another server...
-            //query();
-
-        }
+//
+//        // otherwise, if we have more servers to try, fire off queries until one of them works, or we run out of servers to try...
+//        else while( !serverSpecs.isEmpty() ) {
+//
+//            queryLog.log( "Response was " + _responseCode + "; trying another DNS server" );
+//
+//            // resend the same query, to another server...
+//            //query();
+//
+//        }
 
         // if we get here, we ran out of servers to try, so report a sad outcome and leave...
         queryLog.log("No more DNS servers to try" );
@@ -302,11 +296,11 @@ public abstract class DNSQuery {
         queryLog.log( _msg + ((_cause != null) ? " - " + _cause.getMessage() : "") );
 
         // while we've got more servers to try...
-        while( !serverSpecs.isEmpty() ) {
-
-            // query();
-                return;
-        }
+//        while( !serverSpecs.isEmpty() ) {
+//
+//            // query();
+//                return;
+//        }
 
         // if we get here, we ran out of servers to try - clean up and tell the customer what happened...
 

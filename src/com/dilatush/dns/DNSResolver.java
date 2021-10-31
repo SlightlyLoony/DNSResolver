@@ -117,34 +117,34 @@ public class DNSResolver {
     // forwarded query...
     // only one question per query!
     // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
-    public void query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler, final DNSTransport _initialTransport,
+    public void query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler,
                              final DNSServerSelection _serverSelection, final Object _attachment ) {
 
         Checks.required( _handler );
 
-        queryImpl( _question, new HandlerWrapper( _handler, _attachment )::handle, _initialTransport, _serverSelection );
+        queryImpl( _question, new HandlerWrapper( _handler, _attachment )::handle, _serverSelection );
     }
 
 
-    public void query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport,
+    public void query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler,
                              final DNSServerSelection _serverSelection ) {
 
         Checks.required( _handler );
 
-        queryImpl( _question, new HandlerWrapper( _handler )::handle, _initialTransport, _serverSelection );
+        queryImpl( _question, new HandlerWrapper( _handler )::handle, _serverSelection );
     }
 
 
     private void queryImpl( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler,
-                              final DNSTransport _initialTransport, final DNSServerSelection _serverSelection ) {
+                              final DNSServerSelection _serverSelection ) {
 
-        Checks.required( _question, _initialTransport, _serverSelection );
+        Checks.required( _question, _serverSelection );
 
         List<ServerSpec> servers = getServers( _serverSelection );
 
         DNSQuery query = new DNSForwardedQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), servers, _handler );
 
-        query.initiate( _initialTransport );
+        query.initiate();
     }
 
 
@@ -152,29 +152,29 @@ public class DNSResolver {
     // only one question per query!
     // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
     public void query( final DNSQuestion _question, final BiConsumer<Outcome<QueryResult>,Object> _handler,
-                             final DNSTransport _initialTransport, final Object _attachment ) {
+                             final Object _attachment ) {
 
         Checks.required( _handler );
 
-        queryImpl( _question, new HandlerWrapper( _handler, _attachment )::handle, _initialTransport );
+        queryImpl( _question, new HandlerWrapper( _handler, _attachment )::handle );
     }
 
 
-    public void query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport ) {
+    public void query( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler ) {
 
         Checks.required( _handler );
 
-        queryImpl( _question, new HandlerWrapper( _handler )::handle, _initialTransport );
+        queryImpl( _question, new HandlerWrapper( _handler )::handle );
     }
 
 
-    private void queryImpl( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler, final DNSTransport _initialTransport ) {
+    private void queryImpl( final DNSQuestion _question, final Consumer<Outcome<QueryResult>> _handler ) {
 
-        Checks.required( _question, _initialTransport );
+        Checks.required( _question );
 
         DNSQuery query = new DNSRecursiveQuery( this, cache, nio, executor, activeQueries, _question, getNextID(), _handler );
 
-        query.initiate( _initialTransport );
+        query.initiate();
     }
 
 

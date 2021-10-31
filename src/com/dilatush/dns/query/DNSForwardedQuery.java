@@ -42,6 +42,8 @@ public class DNSForwardedQuery extends DNSQuery {
 
     private final FSM<State,Event> fsm;
 
+    private final List<ServerSpec>                serverSpecs;         // the specs for the DNS servers available to respond to this query...
+
 
     /**
      * Create a new instance of this class with the given parameters.
@@ -65,7 +67,7 @@ public class DNSForwardedQuery extends DNSQuery {
     public DNSForwardedQuery( final DNSResolver _resolver, final DNSCache _cache, final DNSNIO _nio, final ExecutorService _executor,
                               final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
                               final List<ServerSpec> _serverSpecs, final Consumer<Outcome<QueryResult>> _handler ) {
-        super( _resolver, _cache, _nio, _executor, _activeQueries, _question, _id, _serverSpecs, _handler );
+        super( _resolver, _cache, _nio, _executor, _activeQueries, _question, _id, _handler );
 
         Checks.required( _serverSpecs );
         if( _serverSpecs.isEmpty() )
@@ -78,18 +80,13 @@ public class DNSForwardedQuery extends DNSQuery {
 
 
     /**
-     * Initiates a query using the given transport (UDP or TCP).  Note that a call to this method may result in several messages to DNS servers and several responses from them.
+     * Initiates a query using UDP transport.  Note that a call to this method may result in several messages to DNS servers and several responses from them.
      * This may happen if a queried DNS server doesn't respond within the timeout time, or if a series of DNS servers must be queried to get the answer to the question this
      * query is trying to resolve.
-     *
-     * @param _initialTransport The initial transport (UDP or TCP) to use when resolving this query.
      */
-    public void initiate( final DNSTransport _initialTransport ) {
+    public void initiate() {
 
-        Checks.required( _initialTransport, "initialTransport");
-
-        initialTransport = _initialTransport;
-        transport = _initialTransport;
+        transport = UDP;
 
         fsm.onEvent( fsm.event( Event.INITIATE ) );
     }
@@ -271,10 +268,10 @@ public class DNSForwardedQuery extends DNSQuery {
      */
     private FSMEvent<Event> problemAnalysis( final FSMEvent<Event> _event, final FSM<State,Event> _fsm  ) {
 
-        // if we have more servers available, set the transport back to the initial transport and return a MORE_SERVERS event...
+        // if we have more servers available, set the transport back to UDP and return a MORE_SERVERS event...
         if( serverSpecs.size() > 0 ) {
             queryLog.log( "Agent " + agent.name + " had " + _event.event + ", trying another agent" );
-            transport = initialTransport;
+            transport = UDP;
             return _fsm.event( Event.MORE_SERVERS );
         }
 
@@ -303,40 +300,28 @@ public class DNSForwardedQuery extends DNSQuery {
 
 
     /**
-     * Transition action on TRUNCATED_UDP event that sets the transport to TCP.
-     *
-     * @param _transition The transition that triggered this action, in this case always QUERY::TRUNCATED_UDP.
-     * @param _event The event that triggered this action.
-     */
-    private void requeryTCP( final FSMTransition<State,Event> _transition, FSMEvent<Event> _event ) {
-
-        transport = TCP;
-
-        LOGGER.finer( "Resending forwarded query to " + agent.name + " via " + transport );
-        queryLog.log( "Resending forwarded query to " + agent.name + " via " + transport );
-
-        // now actually send that query...
-        Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
-
-        // if we had a problem sending the query, then fire off a SEND_PROBLEM event with the attached outcome...
-        if( sendOutcome.notOk() )
-            _transition.fsm.onEvent( _transition.fsm.event( Event.SEND_PROBLEM, new ProblemDescription( sendOutcome.msg(), sendOutcome.cause() )) );
-    }
-
-
-    /**
-     * Transition action on IDLE::NO_CACHE or QUERY::MORE_SERVERS, to actually send the query to the DNS server.
+     * Transition action on IDLE::NO_CACHE, QUERY::TRUNCATED_UDP, or QUERY::MORE_SERVERS, to actually send the query to the DNS server.
      *
      * @param _transition The transition that triggered this action, in this case either IDLE::NO_CACHE or QUERY::MORE_SERVERS.
      * @param _event The event that triggered this action.
      */
     private void queryServer(  final FSMTransition<State,Event> _transition, FSMEvent<Event> _event  ) {
 
-        // get an agent...
-        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
+        // we have slightly different behavior depending on whether the triggering event is a TRUNCATED_UDP event...
+        if( _event.event == Event.TRUNCATED_UDP ) {
 
-        LOGGER.finer( "Sending forwarded query to " + agent.name + " via " + transport );
-        queryLog.log( "Sending forwarded query to " + agent.name + " via " + transport );
+            // we're going to retry the query to the same agent, but using TCP instead of UDP...
+            transport = TCP;
+        }
+        else {
+
+            // otherwise, we're going to try querying another DNS server...
+            agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
+        }
+
+        String msg = "Sending forwarded query to " + agent.name + " via " + transport;
+        LOGGER.finer( msg );
+        queryLog.log( msg );
 
         // now actually send that query...
         Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
@@ -422,9 +407,16 @@ public class DNSForwardedQuery extends DNSQuery {
      * @param _event The event.
      */
     private void eventListener( final FSMEvent<Event> _event ) {
-        Object data = _event.getData();
-        String dataStr = (data == null) ? "" : ", data: " + data;
-        LOGGER.log( Level.FINEST, "Event: " + _event.event + dataStr );
+
+        // note the event in the query log...
+        queryLog.log( "Event: " + _event.event );
+
+        // and maybe in the log...
+        if( LOGGER.isLoggable( Level.FINEST )) {
+            Object data = _event.getData();
+            String dataStr = (data == null) ? "" : ", data: " + data;
+            LOGGER.log( Level.FINEST, "Event: " + _event.event + dataStr );
+        }
     }
 
 
@@ -434,6 +426,11 @@ public class DNSForwardedQuery extends DNSQuery {
      * @param _state The state.
      */
     private void stateChangeListener( final State _state ) {
+
+        // note the state change in the query log...
+        queryLog.log( "To state: " + _state );
+
+        // and maybe in the log...
         LOGGER.log( Level.FINEST, "State changed to: " + _state );
     }
 
@@ -500,7 +497,7 @@ public class DNSForwardedQuery extends DNSQuery {
         spec.addTransition( State.QUERY,          Event.TIMEOUT,             this::notifyTimeout,    State.ERROR_TERMINATION           );
         spec.addTransition( State.QUERY,          Event.ERROR,               this::notifyError,      State.ERROR_TERMINATION           );
         spec.addTransition( State.IDLE,           Event.ERROR,               this::notifyError,      State.ERROR_TERMINATION           );
-        spec.addTransition( State.QUERY,          Event.TRUNCATED_UDP,       this::requeryTCP,       State.QUERY                       );
+        spec.addTransition( State.QUERY,          Event.TRUNCATED_UDP,       this::queryServer,      State.QUERY                       );
         spec.addTransition( State.QUERY,          Event.MORE_SERVERS,        this::queryServer,      State.QUERY                       );
         spec.addTransition( State.QUERY,          Event.NAME_ERROR,          this::notifyNameError,  State.NAME_NOT_FOUND_TERMINATION  );
         spec.addTransition( State.QUERY,          Event.ANSWER,              this::notifyAnswer,     State.ANSWER_TERMINATION          );

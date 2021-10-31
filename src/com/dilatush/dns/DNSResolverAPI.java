@@ -24,7 +24,6 @@ import java.util.logging.Logger;
 
 import static com.dilatush.dns.misc.DNSUtil.*;
 import static com.dilatush.dns.query.DNSQuery.QueryResult;
-import static com.dilatush.dns.query.DNSTransport.UDP;
 
 /**
  * <p>Instances of this class wrap an instance of {@link DNSResolver} to provide a simpler and more convenient API than is provided by the {@link DNSResolver} itself.</p>
@@ -35,8 +34,7 @@ import static com.dilatush.dns.query.DNSTransport.UDP;
  * querying authoritative DNS servers, starting with the DNS root servers.  This approach is sometimes called iterative resolution as well.</p>
  * <p>The RFCs defining the DNS wire protocols require queries to first be transmitted over UDP, then if the response is truncated because of the size limitation (512
  * bytes) of a UDP response, then the query can be resent over TCP (which has no response size limitation).  The author has read that some DNS servers will in fact refuse
- * an initial query over TCP, though he has not seen that himself.  By default this API will always use UDP as the initial query transport, however, this behavior can
- * be changed (see {@link #DNSResolverAPI(DNSResolver,DNSServerSelection,DNSTransport)}</p>
+ * an initial query over TCP, though he has not seen that himself.</p>
  *
  * @author Tom Dilatush  tom@dilatush.com
  */
@@ -54,9 +52,6 @@ public class DNSResolverAPI {
     /** The server selection strategy (for forwarded queries) used by this instance. */
     public final DNSServerSelection serverSelection;
 
-    /** The initial transport (UDP or TCP) for queries made through this instance. */
-    public final DNSTransport initialTransport;
-
 
     /**
      * Creates a new instance of this class, wrapping the given {@link DNSResolver} instance.  If the wrapped resolver has DNS servers configured that it can forward to, which
@@ -64,25 +59,11 @@ public class DNSResolverAPI {
      *
      * @param _resolver The {@link DNSResolver} wrapped by this instance.
      * @param _serverSelection The {@link DNSServerSelection} strategy that will be used by this instance when forwarding queries.
-     * @param _initialTransport The initial transport (UDP or TCP) used for the queries made through this instance.
-     */
-    public DNSResolverAPI( final DNSResolver _resolver, final DNSServerSelection _serverSelection, final DNSTransport _initialTransport ) {
-        Checks.required( _resolver, _serverSelection, _initialTransport );
-        resolver         = _resolver;
-        serverSelection  = _serverSelection;
-        initialTransport = _initialTransport;
-    }
-
-
-    /**
-     * Creates a new instance of this class, wrapping the given {@link DNSResolver} instance.  If the wrapped resolver has DNS servers configured that it can forward to, which
-     * server is used will be determined by the strategy in the given {@link DNSServerSelection}.  The initial transport used for queries will be UDP.
-     *
-     * @param _resolver The {@link DNSResolver} wrapped by this instance.
-     * @param _serverSelection The {@link DNSServerSelection} strategy that will be used by this instance when forwarding queries.
      */
     public DNSResolverAPI( final DNSResolver _resolver, final DNSServerSelection _serverSelection ) {
-        this( _resolver, _serverSelection, UDP );
+        Checks.required( _resolver, _serverSelection );
+        resolver         = _resolver;
+        serverSelection  = _serverSelection;
     }
 
 
@@ -790,12 +771,12 @@ public class DNSResolverAPI {
         if( resolver.hasServers() ) {
 
             // make the forwarding call...
-            resolver.query( _question, _handler, initialTransport, serverSelection );
+            resolver.query( _question, _handler, serverSelection );
         }
         else {
 
             // make the recursive call...
-            resolver.query( _question, _handler, initialTransport );
+            resolver.query( _question, _handler );
         }
     }
 
@@ -817,12 +798,12 @@ public class DNSResolverAPI {
         if( resolver.hasServers() ) {
 
             // make the forwarding call...
-            resolver.query( _question, _handler, initialTransport, serverSelection );
+            resolver.query( _question, _handler, serverSelection );
         }
         else {
 
             // make the recursive call...
-            resolver.query( _question, _handler, initialTransport, _attachment );
+            resolver.query( _question, _handler, _attachment );
         }
     }
 

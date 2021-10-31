@@ -6,7 +6,6 @@ import com.dilatush.dns.message.DNSQuestion;
 import com.dilatush.dns.message.DNSRRType;
 import com.dilatush.dns.misc.DNSServerSelection;
 import com.dilatush.dns.query.DNSQuery;
-import com.dilatush.dns.query.DNSTransport;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
 
@@ -44,7 +43,7 @@ public class Test {
 
         DNSQuestion question = new DNSQuestion( DNSDomainName.fromString( "zzz.cnn.com" ).info(), DNSRRType.A );
 
-        resolver.query( question, Test::handler, DNSTransport.UDP, DNSServerSelection.speed() );
+        resolver.query( question, Test::handler, DNSServerSelection.speed() );
 
         sleep( 10000 );
     }

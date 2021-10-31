@@ -5,30 +5,40 @@ import com.dilatush.dns.message.*;
 import com.dilatush.dns.misc.DNSCache;
 import com.dilatush.dns.misc.DNSResolverError;
 import com.dilatush.dns.misc.DNSResolverException;
+import com.dilatush.dns.misc.DNSServerException;
 import com.dilatush.dns.rr.*;
 import com.dilatush.util.Checks;
 import com.dilatush.util.ExecutorService;
 import com.dilatush.util.General;
 import com.dilatush.util.Outcome;
+import com.dilatush.util.fsm.FSM;
+import com.dilatush.util.fsm.FSMSpec;
+import com.dilatush.util.fsm.FSMState;
+import com.dilatush.util.fsm.FSMTransition;
+import com.dilatush.util.fsm.events.FSMEvent;
 import com.dilatush.util.ip.IPAddress;
+import com.dilatush.util.ip.IPHost;
 import com.dilatush.util.ip.IPv4Address;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.sql.Array;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static com.dilatush.dns.DNSResolver.ServerSpec;
 import static com.dilatush.dns.message.DNSResponseCode.*;
 import static com.dilatush.dns.misc.DNSResolverError.NETWORK;
+import static com.dilatush.dns.misc.DNSResolverError.TIMEOUT;
+import static com.dilatush.dns.query.DNSTransport.TCP;
 import static com.dilatush.dns.query.DNSTransport.UDP;
 import static com.dilatush.util.General.breakpoint;
-import static java.util.logging.Level.FINER;
-import static java.util.logging.Level.FINEST;
+import static java.util.logging.Level.*;
 
 /**
  * Instances of this class contain the elements and state of a recursive DNS query, and provide methods that implement the resolution of that query.
@@ -39,26 +49,19 @@ public class DNSRecursiveQuery extends DNSQuery {
     private static final long         RECURSIVE_NAME_SERVER_TIMEOUT_MS = 5000;
     private static final int          DNS_SERVER_PORT                  = 53;
 
-        // Oh, how do I hate exceptions?  Let me count the ways...
-        static {
-            Inet4Address wildcard = null;
-            try {
-                wildcard = (Inet4Address) InetAddress.getByName( "0.0.0.0" );
-            }
-            catch( UnknownHostException _e ) {
-                // impossible; we're just making the compiler happy...
-            }
-        }
-
     private static final Outcome.Forge<QueryResult> queryOutcome = new Outcome.Forge<>();
+
+
+    private final FSM<State,Event>        fsm;                   // the finite state machine (FSM) for this query...
 
 
     private final List<IPAddress>         nextNameServerIPs;     // IP addresses of the next name servers to query...
     private final AtomicInteger           subQueries;            // the number of sub-queries currently running...
     private final List<DNSResourceRecord> answers;               // the answers to this query...
 
-    private       boolean                 haveQueriedNSIPs;      // true if we have already queried for name server IP addresses...
-    private       Map<String,IPAddress>   nameServerIPMap;       // map of name servers to IP addresses, with wild card IP for those we don't have addresses for...
+    private       List<IPHost>            nameServers;           // Hostnames and IPs of name servers we can query (IP is wildcard if unknown)...
+
+
 
 
     /**
@@ -81,37 +84,573 @@ public class DNSRecursiveQuery extends DNSQuery {
     public DNSRecursiveQuery( final DNSResolver _resolver, final DNSCache _cache, final DNSNIO _nio, final ExecutorService _executor,
                               final Map<Short,DNSQuery> _activeQueries, final DNSQuestion _question, final int _id,
                               final Consumer<Outcome<QueryResult>> _handler ) {
-        super( _resolver, _cache, _nio, _executor, _activeQueries, _question, _id, new ArrayList<>(), _handler );
+        super( _resolver, _cache, _nio, _executor, _activeQueries, _question, _id, _handler );
+
+        nameServers       = new ArrayList<>();
+        fsm               = createFSM();
+
 
         nextNameServerIPs = new ArrayList<>();
         subQueries        = new AtomicInteger();
         answers           = new ArrayList<>();
-
-        haveQueriedNSIPs  = false;
 
         queryLog.log("New recursive query " + question );
     }
 
 
     /**
-     * Initiates a query using the given transport (UDP or TCP).  Note that a call to this method may result in several messages to DNS servers and several responses from them.
+     * Initiates a query using UDP transport.  Note that a call to this method may result in several messages to DNS servers and several responses from them.
      * This may happen if a queried DNS server doesn't respond within the timeout time, or if a series of DNS servers must be queried to get the answer to the question this
      * query is trying to resolve.
-     *
-     * @param _initialTransport The initial transport (UDP or TCP) to use when resolving this query.
-     * @return The {@link Outcome Outcome&lt;?&gt;} of this operation.
      */
-    public void initiate( final DNSTransport _initialTransport ) {
-
-        Checks.required( _initialTransport, "initialTransport");
+    public void initiate() {
 
         queryLog.log("Initial query" );
         LOGGER.finer( "Initiating new recursive query - ID: " + id + ", " + question.toString() );
 
-        initialTransport = _initialTransport;
-
-        query();
+        // kick off our finite state machine...
+        fsm.onEvent( fsm.event( Event.INITIATE ) );
     }
+
+
+    /**
+     * Analyzes the given {@link DNSMessage}, using the authorities as a source of name server host names, and the additional records as a source of IP addresses.  Builds a list
+     * of {@link IPHost} records.  The first elements in the list are those with IP addresses (if there are any), in the order they appeared in the authorities.  Subsequent
+     * elements are those without IP addresses, in the order they appeared in authorities.  The resolver's configuration for IP version (v4 or v6) are honored, and if both versions
+     * are used and provided, the v4 address has precedence.
+     *
+     * @param _responseMessage The response message to obtain name servers from.
+     * @return The {@link List List&lt;IPHost&gt;} with the results.
+     */
+    private List<IPHost> getNameServers( final DNSMessage _responseMessage ) {
+
+        Checks.required( _responseMessage );
+
+        // make a map of name server host names -> IP addresses, so we can associate those we have...
+        Map<String,IPAddress> nsMap = new HashMap<>();
+
+        // iterate over our authorities, populating the map and assigning IPv4 wildcard addresses to indicate that we don't yet have an actual IP address...
+        _responseMessage.authorities.stream()
+                .filter( (rr) -> rr instanceof NS )
+                .map( (rr) -> (NS)rr )
+                .forEach( (ns) -> nsMap.put( ns.nameServer.text, IPv4Address.WILDCARD ) );
+
+        // if our resolver uses IPv4 addresses, iterate over our additional records to get the IPv4 addresses, matching them up with name servers...
+        if( resolver.useIPv4() ) {
+            _responseMessage.additionalRecords.stream()
+                    .filter( (rr) -> rr instanceof A )
+                    .map( (rr) -> (A)rr )
+                    .forEach( (a) -> {
+                        if( nsMap.containsKey( a.name.text ) )
+                            nsMap.put( a.name.text, a.address );
+                    } );
+        }
+
+        // if our resolver uses IPv6 addresses, iterate over our additional records to get the IPv6 addresses, matching them up with name servers that have no IP address yet...
+        if( resolver.useIPv6() ) {
+            _responseMessage.additionalRecords.stream()
+                    .filter( (rr) -> rr instanceof AAAA )
+                    .map( (rr) -> (AAAA)rr )
+                    .forEach( (aaaa) -> {
+                        if( nsMap.get( aaaa.name.text ) == IPv4Address.WILDCARD )
+                            nsMap.put( aaaa.name.text, aaaa.address );
+                    } );
+        }
+
+        // now build our list of results, making two passes to get first those name servers with IP addresses, and then those without...
+        List<IPHost> results = new ArrayList<>( _responseMessage.authorities.size() );
+        _responseMessage.authorities.stream()
+                .filter( (rr) -> rr instanceof NS )
+                .map( (rr) -> (NS)rr )
+                .filter( (ns) -> nsMap.get( ns.nameServer.text ) != IPv4Address.WILDCARD )
+                .forEach( (ns) -> results.add( IPHost.create( ns.nameServer.text, nsMap.get( ns.nameServer.text ) ).info() ));
+        _responseMessage.authorities.stream()
+                .filter( (rr) -> rr instanceof NS )
+                .map( (rr) -> (NS)rr )
+                .filter( (ns) -> nsMap.get( ns.nameServer.text ) == IPv4Address.WILDCARD )
+                .forEach( (ns) -> results.add( IPHost.create( ns.nameServer.text ).info() ));
+
+        // we're done...
+        return results;
+    }
+
+
+    private record ProblemDescription( String msg, Throwable cause ){}
+
+    private record ReceivedDNSMessage( DNSMessage message, DNSTransport transport ){}
+
+
+
+    //----------------------------------------------------------//
+    //  B e g i n   F i n i t e   S t a t e   M a c h i n e     //
+    //----------------------------------------------------------//
+
+
+    /**
+     * Invoked on entry to the IDLE state, which occurs on the first event received by the FSM.
+     *
+     * @param _state The state being entered, in this case always IDLE.
+     */
+    private void init( final FSMState<State, Event> _state ) {
+
+        queryLog.log("Initial query" );
+        LOGGER.finer( "Initiating new recursive query - ID: " + id + ", " + question.toString() );
+
+
+        // build the query message we need to query the cache, or send to the DNS server...
+        DNSMessage.Builder builder = new DNSMessage.Builder();
+        builder
+                .setOpCode(   DNSOpCode.QUERY )
+                .setRecurse(  true            )
+                .setId(       id & 0xFFFF     )
+                .addQuestion( question );
+        queryMessage = builder.getMessage();
+    }
+
+
+    /**
+     * Invoked on entry to all terminal states, to shut down the query.
+     *
+     * @param _state The state being entered.
+     */
+    private void shutdown( final FSMState<State, Event> _state ) {
+
+        queryLog.log( "Shutting down query" );
+
+        // the agent can be null, if the query was resolved from cache...
+        if( agent != null)
+            agent.close();
+
+        // remove our reference, so this query can be garbage-collected...
+        activeQueries.remove( (short) id );
+    }
+
+
+
+    /**
+     * Event transform that checks to see if this query can be satisfied from the DNS cache.  If it can be satisfied, returns a DATA event.  Otherwise, returns a ?????? event.
+     *
+     * @param _event The FSM event being transformed. In this case, it's always an INITIATE event.
+     * @param _fsm The FSM associated with this transformation.
+     * @return A DATA event if the cache satisfied the query, otherwise a NO_CACHE event.
+     */
+    private FSMEvent<Event> cacheCheck( final FSMEvent<Event> _event, final FSM<State, Event> _fsm  ) {
+
+        // try to resolve the query through the cache...
+        DNSMessage cacheResponse = cache.resolve( queryMessage );
+
+        queryLog.log( "Resolved from cache: response code: " + cacheResponse.responseCode + ", " + cacheResponse.answers.size() + " answers, " + cacheResponse.authorities.size()
+                + " authorities, " + cacheResponse.additionalRecords.size() + " additional records" );
+
+        // if the response code is SERVER_FAILURE, then we couldn't get the root hints; return a NO_ROOT_HINTS event...
+        if( cacheResponse.responseCode == SERVER_FAILURE ) {
+            String msg = "Could not get root hints from cache";
+            LOGGER.log( SEVERE, msg );
+            queryLog.log( msg );
+            return _fsm.event( Event.NO_ROOT_HINTS );
+        }
+
+        // if the response code is FORMAT_ERROR, then the query is malformed; return a MALFORMED_QUERY event...
+        if( cacheResponse.responseCode == FORMAT_ERROR ) {
+            String msg = "Query is malformed";
+            LOGGER.log( SEVERE, msg );
+            queryLog.log( msg );
+            return _fsm.event( Event.MALFORMED_QUERY );
+        }
+
+        // if the response code is OK, and we have some answers; return a GOT_ANSWER event with attached response...
+        if( (cacheResponse.responseCode == OK) && (cacheResponse.answers.size() > 0) ) {
+            String msg = "Resolved from cache: " + question;
+            queryLog.log( msg );
+            LOGGER.log( FINER, msg );
+            return _fsm.event( Event.GOT_ANSWER, new ReceivedDNSMessage( cacheResponse, UDP ) );
+        }
+
+        /* ------------------------------------------------------------------------------------------------------------------------
+         * If we get here, then we should have an OK response with no answers, at least one name server in authorities, and possibly
+         * one or more additional records with IP addresses (of the name servers).  The algorithm from here goes about like this:
+         *
+         *    make a list of queryable name servers, first those that we were given an IP address for (if any), then the rest, all in the order given in the response message
+         *    while we don't have an authoritative answer
+         *       fetch the next name server on the list
+         *       if there were no more name servers
+         *          we have a failure
+         *       if we don't have the IP address for it
+         *          query for the IP address
+         *          if we couldn't get the IP address
+         *             start this loop over again
+         *       query the name server
+         *    cache the authoritative answers
+         *    re-issue the original query
+         *
+         * By updating the cache above, we're providing more information pertinent to the original query.  We'll be one step closer
+         * to resolving it.  The algorithm above may need to be repeated several times before the query is resolved.  At worst case,
+         * it will need to be repeated 'n' times, where 'n' is the number of labels in the domain name being queried.  Better cases
+         * occur because some information has previously been cached.
+         * ------------------------------------------------------------------------------------------------------------------------ */
+
+        // if we didn't get the expected sort of answer, then we have a problem; return a NO_NAME_SERVERS event...
+        if( (cacheResponse.responseCode != OK) || (cacheResponse.authorities.size() == 0) ) {
+            String msg = "No name servers available for resolving " + cacheResponse.getQuestion().qclass.text;
+            queryLog.log( msg );
+            LOGGER.log( FINE, msg );
+            return _fsm.event( Event.NO_NAME_SERVERS );
+        }
+
+        // get our list of name servers and their IP addresses...
+        nameServers = getNameServers( cacheResponse );
+        if( !haveEnoughNameServerIPs( cacheResponse ) && !haveQueriedNSIPs )
+            return subQueryForNameServerIPs();
+
+        // clear this flag, so that if we have to sub-query for a more specific label we won't think we've already done it...
+        haveQueriedNSIPs = false;
+
+        // if we make it here, we have enough name server IPs to actually go query for the next stage of our recursive resolution - so we make a list of server specs for
+        // name servers that we could query, and we start that process going...
+
+        // iterate over the entries in our name server IP address map, and generate server specs for those we have IP addresses for...
+        serverSpecs.clear();
+        nameServerIPMap.entrySet()
+                .stream()
+                .filter( (entry) -> entry.getValue() != IPv4Address.WILDCARD )                                              // we're skipping those with the INVALID_IP...
+                .forEach( (entry) -> {
+                    InetSocketAddress socket = new InetSocketAddress( entry.getValue().toInetAddress(), DNS_SERVER_PORT );  // turn the IP address into a socket address...
+                    ServerSpec spec = new ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, entry.getKey(), socket );        // get a server spec for our name server...
+                    serverSpecs.add( spec );                                                                                // add it to our hoppy list of servers...
+                } );
+        queryLog.log( "Starting query of \"" + cacheResponse.authorities.get( 0 ).name.text + "\" authorities; " + serverSpecs.size() + " name server authorities available" );
+
+        // now we kick things off by querying the first DNS server...
+        return queryNextDNSServer();
+    }
+
+
+    /**
+     * Event transform that analyzes the response message (attached to the DATA event), returning an event according to the results of the analysis:
+     * <ul>
+     *     <li>TRUNCATED_UDP - if the response is truncated and was received on UDP.</li>
+     *     <li>TRUNCATED_TCP - if the response is truncated and was received on TCP.</li>
+     *     <li></li>
+     * </ul>
+     *
+     * @param _event The FSM event being transformed. In this case, it's always a DATA event with an attached DNS response message.
+     * @param _fsm The FSM associated with this transformation.
+     * @return An event that reflects the result of the response message analysis, as described above.
+     */
+    private FSMEvent<Event> dataAnalysis( final FSMEvent<Event> _event, final FSM<State, Event> _fsm  ) {
+
+        // get the information from the event...
+        ReceivedDNSMessage rm = (ReceivedDNSMessage) _event.getData();
+        responseMessage = rm.message;
+
+        // if our response was truncated, we return a truncation event...
+        if( responseMessage.truncated )
+            return _fsm.event( (rm.transport == UDP) ? Event.TRUNCATED_UDP : Event.TRUNCATED_TCP );
+
+
+        // if we got a valid response, we've got our answer...
+        if( responseMessage.responseCode == OK ) {
+
+            String logMsg = "Response was ok: "
+                    + responseMessage.answers.size() + " answers, "
+                    + responseMessage.authorities.size() + " authorities, "
+                    + responseMessage.additionalRecords.size() + " additional records";
+            LOGGER.finest( logMsg );
+            queryLog.log( logMsg );
+
+            // if we're currently in the QUERY state, then update the cache with the answer (if not, then this answer came FROM the cache)...
+            if( _fsm.getStateEnum() == State.QUERY )
+                updateCacheFromMessage( responseMessage );
+
+            return _fsm.event( Event.ANSWER );
+        }
+
+        // if we got a name error, and the response is authoritative, then the name doesn't exist...
+        if( responseMessage.responseCode == NAME_ERROR ) {
+            queryLog.log( "Response was NAME_ERROR, so queried name does not exist" );
+            return _fsm.event( Event.NAME_ERROR );
+        }
+
+        // otherwise, we got something unexpected...
+        queryLog.log( "Response received was unexpected" );
+        return _fsm.event( Event.UNEXPECTED );
+    }
+
+
+    /**
+     * Event transform that analyzes events (RESPONSE_PROBLEM, TRUNCATED_TCP, UNEXPECTED), returning an event according to the results of the analysis:
+     * <ul>
+     *     <li>MORE_SERVERS - on any problem, if there are more DNS servers to try.</li>
+     *     <li>TIMEOUT - if the query timed out and there are no more DNS servers to try.</li>
+     *     <li>ERROR - if there was any error other than a timeout, and there are no more DNS servers to try.</li>
+     * </ul>
+     *
+     * @param _event The FSM event being transformed. In this case, it could be a RESPONSE_PROBLEM, TRUNCATED_TCP, or UNEXPECTED event.
+     * @param _fsm The FSM associated with this transformation.
+     * @return An event that reflects the result of the response message analysis, as described above.
+     */
+    private FSMEvent<Event> problemAnalysis( final FSMEvent<Event> _event, final FSM<State, Event> _fsm  ) {
+
+        // if we have more servers available, set the transport back to UDP and return a MORE_SERVERS event...
+        if( serverSpecs.size() > 0 ) {
+            queryLog.log( "Agent " + agent.name + " had " + _event.event + ", trying another agent" );
+            transport = UDP;
+            return _fsm.event( Event.MORE_SERVERS );
+        }
+
+        // if the event was a RESPONSE_PROBLEM, get the attached problem description record...
+        ProblemDescription problemDescription = null;
+        if( _event.event == Event.RESPONSE_PROBLEM )
+            problemDescription = (ProblemDescription) _event.getData();
+
+        // if we had a timeout, return a TIMEOUT event...
+        if( (_event.event == Event.RESPONSE_PROBLEM) && (problemDescription.cause instanceof DNSTimeoutException) ) {
+            queryLog.log( "Agent " + agent.name + " took too long to respond" );
+            return _fsm.event( Event.TIMEOUT );
+        }
+
+        // if we had some other kind of response problem, we'll assume it's a network problem of some kind...
+        if( _event.event == Event.RESPONSE_PROBLEM )
+            return _fsm.event( Event.ERROR, problemDescription );
+
+        // if we had any other kind of problem, return an ERROR event with attached problem description...
+        if( _event.event == Event.TRUNCATED_TCP )
+            problemDescription = new ProblemDescription( "Received truncated TCP response", null );
+        else if( _event.event == Event.UNEXPECTED )
+            problemDescription = new ProblemDescription( "Received unexpected query response", null );
+        return _fsm.event( Event.ERROR, problemDescription );
+    }
+
+
+    /**
+     * Transition action on IDLE::NO_CACHE, QUERY::TRUNCATED_UDP, or QUERY::MORE_SERVERS, to actually send the query to the DNS server.
+     *
+     * @param _transition The transition that triggered this action, in this case either IDLE::NO_CACHE or QUERY::MORE_SERVERS.
+     * @param _event The event that triggered this action.
+     */
+    private void queryServer( final FSMTransition<State, Event> _transition, FSMEvent<Event> _event  ) {
+
+        // we have slightly different behavior depending on whether the triggering event is a TRUNCATED_UDP event...
+        if( _event.event == Event.TRUNCATED_UDP ) {
+
+            // we're going to retry the query to the same agent, but using TCP instead of UDP...
+            transport = TCP;
+        }
+        else {
+
+            // otherwise, we're going to try querying another DNS server...
+            agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
+        }
+
+        String msg = "Sending forwarded query to " + agent.name + " via " + transport;
+        LOGGER.finer( msg );
+        queryLog.log( msg );
+
+        // now actually send that query...
+        Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
+
+        // if we had a problem sending the query, then fire off a SEND_PROBLEM event with the attached outcome...
+        if( sendOutcome.notOk() )
+            _transition.fsm.onEvent( _transition.fsm.event( Event.SEND_PROBLEM, new ProblemDescription( sendOutcome.msg(), sendOutcome.cause() )) );
+    }
+
+
+    /**
+     * Transition action on TIMEOUT event that notifies the client of a timeout.
+     *
+     * @param _transition The transition that triggered this action, in this case always QUERY::TIMEOUT.
+     * @param _event The event that triggered this action.
+     */
+    private void notifyTimeout( final FSMTransition<State, Event> _transition, FSMEvent<Event> _event ) {
+
+        handler.accept(
+                queryOutcome.notOk(
+                        "DNS query timed out",
+                        new DNSResolverException( "DNS query timed out", null, TIMEOUT ),
+                        new QueryResult( queryMessage, null, queryLog )
+                )
+        );
+    }
+
+
+    /**
+     * Transition action on ERROR event that notifies the client of an error.
+     *
+     * @param _transition The transition that triggered this action, in this case always QUERY::ERROR.
+     * @param _event The event that triggered this action.
+     */
+    private void notifyError( final FSMTransition<State, Event> _transition, FSMEvent<Event> _event ) {
+
+        // get the problem description...
+        ProblemDescription problemDescription = (ProblemDescription) _event.getData();
+
+        handler.accept(
+                queryOutcome.notOk(
+                        problemDescription.msg,
+                        new DNSResolverException( problemDescription.msg, problemDescription.cause, NETWORK ),
+                        new QueryResult( queryMessage, null, queryLog )
+                )
+        );
+    }
+
+
+    /**
+     * Transition action on NAME_ERROR event that notifies the client that the queried DNS name does not exist.
+     *
+     * @param _transition The transition that triggered this action, in this case always QUERY::NAME_ERROR.
+     * @param _event The event that triggered this action.
+     */
+    private void notifyNameError( final FSMTransition<State, Event> _transition, FSMEvent<Event> _event ) {
+
+        // let the customer know what happened...
+        handler.accept( queryOutcome.notOk(
+                "Domain does not exist: '" + question.qname + "'",
+                new DNSServerException( "Domain does not exist: '" + question.qname + "'", NAME_ERROR ),
+                new QueryResult( queryMessage, null, queryLog )
+        ) );
+    }
+
+
+    /**
+     * Transition action on ANSWER event that notifies the client that an answer was obtained from a DNS server.
+     *
+     * @param _transition The transition that triggered this action, in this case QUERY::ANSWER (answer to a query) or IDLE::ANSWER (resolved from cache).
+     * @param _event The event that triggered this action.
+     */
+    private void notifyAnswer( final FSMTransition<State, Event> _transition, FSMEvent<Event> _event ) {
+
+        // send the results, and then we're done...
+        handler.accept( queryOutcome.ok( new QueryResult( queryMessage, responseMessage, queryLog )) );
+    }
+
+
+    /**
+     * Simple event listener to log events seen by the FSM.
+     *
+     * @param _event The event.
+     */
+    private void eventListener( final FSMEvent<Event> _event ) {
+
+        // note the event in the query log...
+        queryLog.log( "Event: " + _event.event );
+
+        // and maybe in the log...
+        if( LOGGER.isLoggable( Level.FINEST )) {
+            Object data = _event.getData();
+            String dataStr = (data == null) ? "" : ", data: " + data;
+            LOGGER.log( Level.FINEST, "Event: " + _event.event + dataStr );
+        }
+    }
+
+
+    /**
+     * Simple state change listener to log state changes within the FSM.
+     *
+     * @param _state The state.
+     */
+    private void stateChangeListener( final State _state ) {
+
+        // note the state change in the query log...
+        queryLog.log( "To state: " + _state );
+
+        // and maybe in the log...
+        LOGGER.log( Level.FINEST, "State changed to: " + _state );
+    }
+
+
+    //----------------------------------------------------------//
+    //  E n d   F i n i t e   S t a t e   M a c h i n e         //
+    //----------------------------------------------------------//
+
+
+    //----------------------------------------------------------//
+    //  B e g i n   F S M   B u i l d e r                       //
+    //----------------------------------------------------------//
+
+    private enum State {
+        IDLE,                         // FSM constructed, but nothing has happened...
+
+        QUERY,                        // Send query to DNS server and wait for a response...
+        ERROR_TERMINATION,            // Terminate the query because of an error...
+        NAME_NOT_FOUND_TERMINATION,   // Terminate the query because the queried name was not found...
+        ANSWER_TERMINATION            // Terminate the query because an answer for the queried name was found...
+    }
+
+
+    private enum Event {
+        INITIATE,          // Initiate the forwarded DNS query...
+        NO_ROOT_HINTS,     // Tried to resolve from cache, but couldn't even get root hints...
+        MALFORMED_QUERY,   // Tried to resolve from cache, but the cache didn't understand the query...
+        GOT_ANSWER,        // Tried to resolve from cache, and got some answers, but what sort of answer isn't known yet...
+        NO_NAME_SERVERS,   // Tried to resolve from cache, got no answers and also no name servers to query...
+
+        NO_CACHE,          // The query could not be resolved from the cache...
+        DATA,              // Received data from the queried DNS server (or the cache)...
+        RESPONSE_PROBLEM,  // Problem occurred with the response from a queried DNS server (timeout or an error of some kind)...
+        SEND_PROBLEM,      // Problem occurred when sending a query to a DNS server...
+        MORE_SERVERS,      // There are more DNS servers we can try to query...
+        TIMEOUT,           // Timed out while waiting for a response from a DNS server...
+        ERROR,             // There was an error when querying a DNS server...
+        TRUNCATED_UDP,     // Received data via UDP, and response was truncated...
+        TRUNCATED_TCP,     // Received data via TCP, and response was truncated...
+        UNEXPECTED,        // Received a response that did not fit the expected patterns...
+        NAME_ERROR,        // Received an authoritative name error (queried name does not exist)...
+        ANSWER             // Received an authoritative answer to the DNS query...
+    }
+
+
+    /**
+     * Create and return the engine controller FSM.
+     *
+     * @return the FSM created
+     */
+    private FSM<State, Event> createFSM() {
+
+        // create our FSM specification with the initial state and an example event...
+        FSMSpec<State, Event> spec = new FSMSpec<>( State.IDLE, Event.DATA );
+
+        // mark our terminal states...
+        spec.setStateTerminal( State.ERROR_TERMINATION          );
+        spec.setStateTerminal( State.NAME_NOT_FOUND_TERMINATION );
+        spec.setStateTerminal( State.ANSWER_TERMINATION         );
+
+        // set up our on-entry state actions...
+        spec.setStateOnEntryAction( State.IDLE,                       this::init        );
+
+        spec.setStateOnEntryAction( State.ERROR_TERMINATION,          this::shutdown    );
+        spec.setStateOnEntryAction( State.NAME_NOT_FOUND_TERMINATION, this::shutdown    );
+        spec.setStateOnEntryAction( State.ANSWER_TERMINATION,         this::shutdown    );
+
+        // add all the FSM state transitions for our FSM...
+        spec.addTransition( State.IDLE,           Event.NO_CACHE,            this::queryServer,      State.QUERY                       );
+        spec.addTransition( State.QUERY,          Event.SEND_PROBLEM,        this::notifyError,      State.ERROR_TERMINATION           );
+        spec.addTransition( State.QUERY,          Event.TIMEOUT,             this::notifyTimeout,    State.ERROR_TERMINATION           );
+        spec.addTransition( State.QUERY,          Event.ERROR,               this::notifyError,      State.ERROR_TERMINATION           );
+        spec.addTransition( State.IDLE,           Event.ERROR,               this::notifyError,      State.ERROR_TERMINATION           );
+        spec.addTransition( State.QUERY,          Event.TRUNCATED_UDP,       this::queryServer,      State.QUERY                       );
+        spec.addTransition( State.QUERY,          Event.MORE_SERVERS,        this::queryServer,      State.QUERY                       );
+        spec.addTransition( State.QUERY,          Event.NAME_ERROR,          this::notifyNameError,  State.NAME_NOT_FOUND_TERMINATION  );
+        spec.addTransition( State.QUERY,          Event.ANSWER,              this::notifyAnswer,     State.ANSWER_TERMINATION          );
+        spec.addTransition( State.IDLE,           Event.ANSWER,              this::notifyAnswer,     State.ANSWER_TERMINATION          );
+
+        // add our event transforms...
+        spec.addEventTransform( Event.INITIATE,         this::cacheCheck      );
+        spec.addEventTransform( Event.DATA,             this::dataAnalysis    );
+        spec.addEventTransform( Event.RESPONSE_PROBLEM, this::problemAnalysis );
+        spec.addEventTransform( Event.TRUNCATED_TCP,    this::problemAnalysis );
+        spec.addEventTransform( Event.UNEXPECTED,       this::problemAnalysis );
+
+        // add our listeners...
+        spec.setEventListener( this::eventListener );
+        spec.setStateChangeListener( this::stateChangeListener );
+
+        // we're done with the spec, so use it to create the actual FSM and return it...
+        return new FSM<>( spec );
+    }
+
+    //----------------------------------------------------------//
+    //  E n d   F S M   B u i l d e r                           //
+    //----------------------------------------------------------//
 
 
     /**
@@ -126,99 +665,9 @@ public class DNSRecursiveQuery extends DNSQuery {
         if( agent != null )
             agent.close();
 
-        transport = initialTransport;
+        transport = UDP;
 
-        LOGGER.finer( "Recursive query - ID: " + id + ", " + question.toString() );
 
-        DNSMessage.Builder builder = new DNSMessage.Builder();
-        builder
-            .setOpCode(   DNSOpCode.QUERY )
-            .setRecurse(  false           )
-            .setId(       id & 0xFFFF     )
-            .addQuestion( question );
-
-        queryMessage = builder.getMessage();
-
-        // try to resolve the query through the cache...
-        DNSMessage cacheResponse = cache.resolve( queryMessage );
-
-        queryLog.log( "Resolved from cache: response code: " + cacheResponse.responseCode + ", " + cacheResponse.answers.size() + " answers, " + cacheResponse.authorities.size()
-            + " authorities, " + cacheResponse.additionalRecords.size() + " additional records" );
-
-        // if the response code is SERVER_FAILURE, then we couldn't get the root hints - that's fatal; let the user know...
-        if( cacheResponse.responseCode == SERVER_FAILURE ) {
-            String msg = "Could not get root hints from cache";
-            queryLog.log( msg );
-            return outcome.notOk( msg, new DNSResolverException( msg, DNSResolverError.ROOT_HINTS_PROBLEMS ) );
-        }
-
-        // if the response code is FORMAT_ERROR, then the query is malformed - that's fatal; let the user know...
-        if( cacheResponse.responseCode == FORMAT_ERROR ) {
-            String msg = "Query is malformed";
-            queryLog.log( msg );
-            return outcome.notOk( msg, new DNSResolverException( msg, DNSResolverError.BAD_QUERY ) );
-        }
-
-        // if the response code is OK, and we have some answers, then we're done...
-        if( (cacheResponse.responseCode == OK) && (cacheResponse.answers.size() > 0) ) {
-            queryLog.log( "Resolved from cache: " + question );
-            handler.accept( queryOutcome.ok( new QueryResult( queryMessage, cacheResponse, queryLog ) ) );
-            return outcome.ok();
-        }
-
-        /* ------------------------------------------------------------------------------------------------------------------------
-         * If we get here, then we should have an OK response with no answers, at least one name server in authorities, and possibly
-         * one or more additional records with IP addresses (of the name servers).  The algorithm from here goes about like this:
-         *
-         *    if we don't have enough IP addresses for the authoritative name servers
-         *       make sub-queries to get the needed IP addresses
-         *    query the authoritative name servers one at a time, until we get some answers
-         *    cache the answers
-         *    re-issue the original query
-         *
-         * By updating the cache above, we're providing more information pertinent to the original query.  We'll be one step closer
-         * to resolving it.  The algorithm above may need to be repeated several times before the query is resolved.  At worst case,
-         * it will need to be repeated 'n' times, where 'n' is the number of labels in the domain name being queried.  Better cases
-         * occur because some information has previously been cached.
-         *
-         * Above we refer to "enough IP addresses for the name servers".  What we mean by that is either an IP address for every
-         * name server, or at least two name servers with IP addresses.  This is just a heuristic to attempt to guarantee that we
-         * can successfully query an authoritative name server.  It's common for the authorities to contain more than two name
-         * servers, and relatively uncommon for the authorities to have just one.  Sometimes the resource records for those name
-         * servers have very short (a few seconds) TTLs; this is most common when CDNs are in use.
-         * ------------------------------------------------------------------------------------------------------------------------ */
-
-        // make sure we got a valid-looking answer...
-        if( (cacheResponse.responseCode != OK) || (cacheResponse.authorities.size() == 0) ) {
-            String msg = "No name servers available for resolving " + cacheResponse.getQuestion().qclass.text;
-            queryLog.log( msg );
-            return outcome.notOk( msg, new DNSResolverException( msg, DNSResolverError.NO_NAME_SERVERS ) );
-        }
-
-        // see if we need to sub-query for name server IP addresses - but don't do it more than once...
-        if( !haveEnoughNameServerIPs( cacheResponse ) && !haveQueriedNSIPs )
-            return subQueryForNameServerIPs();
-
-        // clear this flag, so that if we have to sub-query for a more specific label we won't think we've already done it...
-        haveQueriedNSIPs = false;
-
-        // if we make it here, we have enough name server IPs to actually go query for the next stage of our recursive resolution - so we make a list of server specs for
-        // name servers that we could query, and we start that process going...
-
-        // iterate over the entries in our name server IP address map, and generate server specs for those we have IP addresses for...
-        serverSpecs.clear();
-        nameServerIPMap.entrySet()
-            .stream()
-            .filter( (entry) -> entry.getValue() != IPv4Address.WILDCARD )                                              // we're skipping those with the INVALID_IP...
-            .forEach( (entry) -> {
-                InetSocketAddress socket = new InetSocketAddress( entry.getValue().toInetAddress(), DNS_SERVER_PORT );  // turn the IP address into a socket address...
-                ServerSpec spec = new ServerSpec( RECURSIVE_NAME_SERVER_TIMEOUT_MS, 0, entry.getKey(), socket );        // get a server spec for our name server...
-                serverSpecs.add( spec );                                                                                // add it to our hoppy list of servers...
-            } );
-        queryLog.log( "Starting query of \"" + cacheResponse.authorities.get( 0 ).name.text + "\" authorities; " + serverSpecs.size() + " name server authorities available" );
-
-        // now we kick things off by querying the first DNS server...
-        return queryNextDNSServer();
    }
 
 
@@ -332,7 +781,7 @@ public class DNSRecursiveQuery extends DNSQuery {
                        DNSQuestion aQuestion = new DNSQuestion( DNSDomainName.fromString( entry.getKey() ).info(), DNSRRType.A );
                        DNSRecursiveQuery recursiveQuery
                                = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
-                       recursiveQuery.initiate( UDP );
+                       recursiveQuery.initiate();
                    }
 
                    // fire off the query for the AAAA record...
@@ -344,7 +793,7 @@ public class DNSRecursiveQuery extends DNSQuery {
                        DNSQuestion aQuestion = new DNSQuestion( DNSDomainName.fromString( entry.getKey() ).info(), DNSRRType.AAAA );
                        DNSRecursiveQuery recursiveQuery
                                = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
-                       recursiveQuery.initiate( UDP );
+                       recursiveQuery.initiate();
                    }
        } );
 
@@ -566,7 +1015,7 @@ public class DNSRecursiveQuery extends DNSQuery {
                 LOGGER.finest( "Firing " + nsDomainName.text + " A record sub-query " + subQueries.get() + " from query " + id );
                 DNSQuestion aQuestion = new DNSQuestion( nsDomainName, DNSRRType.A );
                 DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
-                recursiveQuery.initiate( UDP );
+                recursiveQuery.initiate();
             }
 
             // fire off the query for the AAAA record...
@@ -575,7 +1024,7 @@ public class DNSRecursiveQuery extends DNSQuery {
                 LOGGER.finest( "Firing " + nsDomainName.text + " AAAA record sub-query " + subQueries.get() + " from query " + id );
                 DNSQuestion aQuestion = new DNSQuestion( nsDomainName, DNSRRType.AAAA );
                 DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, aQuestion, resolver.getNextID(), this::handleNSResolutionSubQuery );
-                recursiveQuery.initiate( UDP );
+                recursiveQuery.initiate();
             }
         } );
     }
