@@ -72,6 +72,7 @@ public class DNSForwardedQuery extends DNSQuery {
         Checks.required( _serverSpecs );
         if( _serverSpecs.isEmpty() )
             throw new IllegalArgumentException( "No DNS servers specified for DNSForwardedQuery" );
+        serverSpecs = _serverSpecs;
 
         fsm = createFSM();
 
