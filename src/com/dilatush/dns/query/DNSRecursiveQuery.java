@@ -317,7 +317,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         nameServers = getNameServers( cacheResponse );
 
         // return a QUERY_NS event...
-        return _fsm.event( Event.QUERY_NS );
+        return _fsm.event( Event.INITIATE_NS_QUERY );
     }
 
 
@@ -350,7 +350,14 @@ public class DNSRecursiveQuery extends DNSQuery {
 
 
     /**
-     * Event transform that checks to see we have a complete answer, or if we need to resolve a CNAME alias.
+     * Event transform that ensures that a name server is queried.  The name servers that could be queried are in the {@code nameServers} list of {@link IPHost}s, in order. Each
+     * of the items in the list may or may not have an associated IP address.  Four events are processed by this transform: INITIATE_NS_QUERY, QUERY_NS_FAIL, NO_NS_IP, and
+     * GOT_NS_IP.  Returned events are:
+     * <ul>
+     *     <li>QUERY_NS (with an attached {@link IPAddress}) to initiate a query of an authoritative DNS server.</li>
+     *     <li>SUBQUERY_NS_IP (with an attached {@link String} hostname) to initiate a subquery for the IP address of the given hostname (a DNS server).</li>
+     *     <li>NO_MORE_NS if there are no more name servers to query.</li>
+     * </ul>
      *
      * @param _event The FSM event being transformed. In this case, it's always a GOT_ANSWER event with an attached {@link DNSMessage}.
      * @param _fsm The FSM associated with this transformation.
@@ -358,22 +365,72 @@ public class DNSRecursiveQuery extends DNSQuery {
      */
     private FSMEvent<Event> ensureNameServer( final FSMEvent<Event> _event, final FSM<State, Event> _fsm  ) {
 
-        // get the DNS message attached to our event...
-        DNSMessage msg = (DNSMessage) _event.getData();
+        // if we are getting a failure of some kind, remove the first entry in our list...
+        if( (_event.event == Event.QUERY_NS_FAIL) || (_event.event == Event.NO_NS_IP) ) {
 
-        // if we have a single answer, it's a CNAME record, and our query was neither a CNAME nor an ANY query, then we need to follow the CNAME trail...
-        if( (msg.answers.size() == 1) && (msg.answers.get( 0 ) instanceof CNAME cname) && !((question.qtype == CNAME) || (question.qtype == ANY)) ) {
+            // handle the logging...
+            String msg = "Name server " + nameServers.get( 0 ).hostname + " failed: " + _event.event;
+            LOGGER.finer( msg );
+            queryLog.log( msg );
 
-            // save the CNAME in our accumulated answers...
-            answers.add( cname );
-
-            // return a QUERY_CNAME event with attached name to resolve...
-            return _fsm.event( Event.QUERY_CNAME, cname.cname.text );
+            // remove the first name server...
+            nameServers.remove( 0 );
         }
 
-        // otherwise, we must have the final answer - so save the answers and return a FINAL_ANSWER event...
-        answers.addAll( msg.answers );
-        return _fsm.event( Event.FINAL_ANSWER );
+        // otherwise, if we just got a name server IP address, add it to the first entry in our list...
+        else if( _event.event == Event.GOT_NS_IP ) {
+
+            // get the IP from the event...
+            IPAddress ip = (IPAddress) _event.getData();
+
+            // handle the logging...
+            String msg = "Got IP for name server " + nameServers.get( 0 ).hostname + ": " + ip;
+            LOGGER.finer( msg );
+            queryLog.log( msg );
+
+            // update our nameserver list...
+            nameServers.set( 0, nameServers.get( 0 ).add( ip ) );
+        }
+
+        // if we have no more name servers, return a NO_MORE_NS event...
+        if( nameServers.isEmpty() ) {
+
+            // handle the logging...
+            String msg = "No more name servers to query for " + question.toString();
+            LOGGER.finer( msg );
+            queryLog.log( msg );
+
+            // return NO_MORE_NS...
+            return _fsm.event( Event.NO_MORE_NS );
+        }
+
+        // get the name server we're working on...
+        IPHost nameServer = nameServers.get( 0 );
+
+
+        // if the first name server has no IP address, return a SUBQUERY_NS_IP (with attached hostname string) to initiate a subquery for the name server's IP address...
+        if( nameServer.ipAddresses.isEmpty() ) {
+
+            // handle the logging...
+            String msg = "Initiating subquery for IP address for host: " + nameServer.hostname;
+            LOGGER.finer( msg );
+            queryLog.log( msg );
+
+            // return a SUBQUERY_NS_IP event...
+            return _fsm.event( Event.SUBQUERY_NS_IP, nameServer.hostname );
+        }
+
+        // if we make it to here, then we have at least one name server, and it has an IP address - so return a QUERY_NS event with an attached IP address...
+        IPAddress ip = nameServer.ipAddresses.get( 0 );
+
+        // handle the logging...
+        String msg = "Initiating query of authoritative DNS server, hostname: " + nameServer.hostname + ", at IP address: " + ip.toString();
+        LOGGER.finer( msg );
+        queryLog.log( msg );
+
+        // return a SUBQUERY_NS_IP event...
+        return _fsm.event( Event.QUERY_NS, ip );
+
     }
 
 
@@ -398,6 +455,27 @@ public class DNSRecursiveQuery extends DNSQuery {
         DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, cnameSubqueryQuestion, resolver.getNextID(),
                 this::handleCNAMESubqueryResponse );
         recursiveQuery.initiate();
+    }
+
+
+    /**
+     * Transition action on IDLE::QUERY_NS, SUBQUERY_NS_IP::QUERY_NS, or QUERY_NS::QUERY_NS, to initiate the sub-query.  The QUERY_NS event has an IPAddress attached.
+     *
+     * @param _transition The transition that triggered this action.
+     * @param _event The event that triggered this action, in this case always QUERY_NS.
+     */
+    private void initiateQuery( final FSMTransition<State, Event> _transition, FSMEvent<Event> _event  ) {
+
+        // figure out what agent we're going to use...
+        agent = new DNSServerAgent( resolver, this, nio, executor, serverSpecs.remove( 0 ) );
+
+        queryLog.log( "Sending recursive query for " + question + " to " + agent.name + " via " + transport );
+
+        Outcome<?> sendOutcome = agent.sendQuery( queryMessage, transport );
+
+        return sendOutcome.ok()
+                ? queryOutcome.ok( new QueryResult( queryMessage, null, queryLog ) )
+                : queryOutcome.notOk( sendOutcome.msg(), new DNSResolverException( sendOutcome.msg(), sendOutcome.cause(), DNSResolverError.BAD_QUERY ) );
     }
 
 
@@ -528,7 +606,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         NO_ROOT_HINTS,     // Tried to resolve from cache, but couldn't even get root hints...
         MALFORMED_QUERY,   // Tried to resolve from cache, but the cache didn't understand the query...
         GOT_ANSWER,        // Tried to resolve from cache, and got some answers, but what sort of answer isn't known yet...
-        NO_NAME_SERVERS,   // Tried to resolve from cache, got no answers and also no name servers to query...
+        NO_MORE_NS,        // Tried to resolve from cache, got no answers and also no name servers to query...
         INITIATE_NS_QUERY, // Kick off the process of querying a name server...
         QUERY_NS_FAIL,     // Query of name server failed...
         QUERY_NS,          // Query name server...
@@ -586,9 +664,13 @@ public class DNSRecursiveQuery extends DNSQuery {
         spec.addTransition( State.QUERY_NS,        Event.NAME_ERROR,          this::notifyNameError,            State.ERROR_TERMINATION    );
 
         // add our event transforms...
-        spec.addEventTransform( Event.INITIATE,         this::cacheCheck      );
-        spec.addEventTransform( Event.NS_ANSWER,        this::cacheCheck      );
-        spec.addEventTransform( Event.GOT_ANSWER,       this::answerCheck     );
+        spec.addEventTransform( Event.INITIATE,          this::cacheCheck       );
+        spec.addEventTransform( Event.NS_ANSWER,         this::cacheCheck       );
+        spec.addEventTransform( Event.GOT_ANSWER,        this::answerCheck      );
+        spec.addEventTransform( Event.INITIATE_NS_QUERY, this::ensureNameServer );
+        spec.addEventTransform( Event.QUERY_NS_FAIL,     this::ensureNameServer );
+        spec.addEventTransform( Event.NO_NS_IP,          this::ensureNameServer );
+        spec.addEventTransform( Event.GOT_NS_IP,         this::ensureNameServer );
 
         // add our listeners...
         spec.setEventListener( this::eventListener );
