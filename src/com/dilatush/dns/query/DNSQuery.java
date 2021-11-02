@@ -114,11 +114,11 @@ public abstract class DNSQuery {
 
         Checks.required( _responseMsg, _transport );
 
-        queryLog.log("Received response via " + _transport );
-        LOGGER.finer( "Received response via " + _transport + ": " + _responseMsg.toString() );
-
         // no matter what happens next, we need to shut down the agent...
         agent.close();
+
+        queryLog.log("Received response via " + _transport );
+        LOGGER.finer( "Received response via " + _transport + ": " + _responseMsg.toString() );
 
         // stuff the response away...
         responseMessage = _responseMsg;

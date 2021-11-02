@@ -103,6 +103,11 @@ public class DNSForwardedQuery extends DNSQuery {
      */
     protected void handleProblem( final String _msg, final Throwable _cause ) {
 
+        Checks.required( _msg, _cause );
+
+        // no matter what happens next, we need to shut down the agent...
+        agent.close();
+
         queryLog.log( _msg + ((_cause != null) ? " - " + _cause.getMessage() : "") );
         LOGGER.finer( "Problem reported: " + _msg );
 
@@ -121,6 +126,9 @@ public class DNSForwardedQuery extends DNSQuery {
     protected void handleResponse( final DNSMessage _responseMsg, final DNSTransport _transport ) {
 
         Checks.required( _responseMsg, _transport );
+
+        // no matter what happens next, we need to shut down the agent...
+        agent.close();
 
         queryLog.log("Received response via " + _transport );
         LOGGER.finer( "Received response via " + _transport + ": " + _responseMsg.toString() );
