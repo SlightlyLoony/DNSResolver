@@ -53,7 +53,7 @@ public class DNSRecursiveQuery extends DNSQuery {
     private final FSM<State,Event>        fsm;                   // the finite state machine (FSM) for this query...
 
 
-    private final AtomicInteger           subQueries;            // the number of sub-queries currently running...
+    private final AtomicInteger           nsIPsubQueries;        // the number of name server IP sub-queries currently running...
     @SuppressWarnings( "MismatchedQueryAndUpdateOfCollection" )
     private final List<DNSResourceRecord> answers;               // the answers to this query...
 
@@ -88,7 +88,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         fsm               = createFSM();
 
 
-        subQueries        = new AtomicInteger();
+        nsIPsubQueries    = new AtomicInteger();
         answers           = new ArrayList<>();
 
         queryLog.log("New recursive query " + question );
