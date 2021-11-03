@@ -35,6 +35,7 @@ import static com.dilatush.dns.message.DNSRRType.ANY;
 import static com.dilatush.dns.message.DNSRRType.CNAME;
 import static com.dilatush.dns.message.DNSResponseCode.*;
 import static com.dilatush.dns.misc.DNSResolverError.*;
+import static com.dilatush.dns.query.DNSTransport.TCP;
 import static com.dilatush.dns.query.DNSTransport.UDP;
 import static java.util.logging.Level.*;
 
@@ -54,6 +55,9 @@ public class DNSRecursiveQuery extends DNSQuery {
 
 
     private final AtomicInteger           nsIPsubQueries;        // the number of name server IP sub-queries currently running...
+    private final List<IPAddress>         nsIPv4Addresses;       // IPv4 addresses that we got when sub-querying for name server IP addresses...
+    private final List<IPAddress>         nsIPv6Addresses;       // IPv6 addresses that we got when sub-querying for name server IP addresses...
+
     @SuppressWarnings( "MismatchedQueryAndUpdateOfCollection" )
     private final List<DNSResourceRecord> answers;               // the answers to this query...
 
@@ -89,6 +93,8 @@ public class DNSRecursiveQuery extends DNSQuery {
 
 
         nsIPsubQueries    = new AtomicInteger();
+        nsIPv4Addresses   = new ArrayList<>();
+        nsIPv6Addresses   = new ArrayList<>();
         answers           = new ArrayList<>();
 
         queryLog.log("New recursive query " + question );
@@ -186,22 +192,79 @@ public class DNSRecursiveQuery extends DNSQuery {
         if( _outcome.notOk() ) {
 
             // take care of the logging...
-            queryLog.log( "Bad outcome on CNAME subquery: " + _outcome.msg() );
-            activeQueries.remove( (short) id );
-            queryLog.log( "CNAME sub-query: " + qr.query().questions.get( 0 ).toString() );
+            String msg = "Bad outcome on CNAME subquery: " + _outcome.msg();
+            queryLog.log( msg );
             queryLog.addSubQueryLog( qr.log() );
+            LOGGER.finer( msg );
 
             // fire a CNAME_ERROR event with a problem description...
-            fsm.event( Event.CNAME_ERROR, new ProblemDescription( _outcome.msg(), _outcome.cause() ) );
+            fsm.onEvent( fsm.event( Event.CNAME_ERROR, new ProblemDescription( _outcome.msg(), _outcome.cause() ) ) );
             return;
         }
 
         // take care of the logging...
-        queryLog.log( "CNAME sub-query: " + qr.query().questions.get( 0 ).toString() );
+        String msg = "CNAME sub-query: " + qr.query().questions.get( 0 ).toString();
+        queryLog.log( msg );
         queryLog.addSubQueryLog( _outcome.info().log() );
+        LOGGER.finer( msg );
 
         // fire a GOT_ANSWER event with attached message...
-        fsm.event( Event.GOT_ANSWER, qr.response() );
+        fsm.onEvent( fsm.event( Event.GOT_ANSWER, qr.response() ) );
+    }
+
+
+    /**
+     * Invoked by NS IP subqueries, to provide the result of the subquery.
+     *
+     * @param _outcome The {@link Outcome Outcome&lt;QueryResult&gt;} of the subquery.
+     */
+    private void handleNSIPSubqueryResponse( final Outcome<QueryResult> _outcome ) {
+
+        // get the query result...
+        QueryResult qr = _outcome.info();
+
+        // if the outcome was ok, extract any IP addresses we got and squirrel them away...
+        if( _outcome.ok() ) {
+
+            // iterate over the answers to extract any IP addresses...
+            qr.response().answers                                // iterate over all the answers...
+                    .forEach( (rr) -> {
+                        if( rr instanceof A a )                  // if it's an A record, extract the IPv4 address...
+                            nsIPv4Addresses.add( a.address );
+                        if( rr instanceof AAAA aaaa )            // if it's an AAAA record, extract the IPv6 address...
+                            nsIPv6Addresses.add( aaaa.address );
+                    } );
+        }
+
+        // decrement the count of subqueries; when we get to zero it's time to respond fire an event with our results...
+        if( nsIPsubQueries.decrementAndGet() == 0 ) {
+
+            // if we didn't get any name server IP addresses, fire a NO_NS_IP event to convey the sad, sad news...
+            if( (nsIPv4Addresses.size() + nsIPv6Addresses.size()) == 0 ) {
+
+                // take care of the logging...
+                String msg = "Didn't find any IP addresses for name server: " + qr.query().questions.get( 0 ).qname.text;
+                queryLog.log( msg );
+                queryLog.addSubQueryLog( qr.log() );
+                LOGGER.finer( msg );
+
+                // fire a NO_NS_IP event...
+                fsm.onEvent( fsm.event( Event.NO_NS_IP ) );
+                return;
+            }
+
+            // otherwise, grab an IP address...
+            IPAddress ip = (nsIPv4Addresses.isEmpty() ? nsIPv6Addresses.get( 0 ) : nsIPv4Addresses.get( 0 ) );
+
+            // take care of the logging...
+            String msg = "Found an IP address for name server " + qr.query().questions.get( 0 ).qname.text + ": " + ip;
+            queryLog.log( msg );
+            queryLog.addSubQueryLog( qr.log() );
+            LOGGER.finer( msg );
+
+            // and fire off a GOT_NS_IP event...
+            fsm.onEvent( fsm.event( Event.GOT_NS_IP, ip ) );
+        }
     }
 
 
@@ -320,7 +383,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         DNSMessage.Builder builder = new DNSMessage.Builder();
         builder
                 .setOpCode(   DNSOpCode.QUERY )
-                .setRecurse(  true            )
+                .setRecurse(  false           )
                 .setId(       id & 0xFFFF     )
                 .addQuestion( question );
         queryMessage = builder.getMessage();
@@ -407,7 +470,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         // get our list of name servers and their IP addresses...
         nameServers = getNameServers( cacheResponse );
 
-        // return a QUERY_NS event...
+        // return a INITIATE_NS_QUERY event...
         return _fsm.event( Event.INITIATE_NS_QUERY );
     }
 
@@ -455,6 +518,14 @@ public class DNSRecursiveQuery extends DNSQuery {
      * @return A QUERY_NS, SUBQUERY_NS_IP, or NO_MORE_NS event.
      */
     private FSMEvent<Event> ensureNameServer( final FSMEvent<Event> _event, final FSM<State, Event> _fsm  ) {
+
+        // if we got an INITIATE_NS_QUERY event, initialize our transport to UDP...
+        if( _event.event == Event.INITIATE_NS_QUERY )
+            transport = UDP;
+
+        // if we got a TRUNCATED event, initialize our transport to TCP...
+        if( _event.event == Event.TRUNCATED )
+            transport = TCP;
 
         // if we are getting a failure of some kind, remove the first entry in our list...
         if( (_event.event == Event.QUERY_NS_FAIL) || (_event.event == Event.NO_NS_IP) ) {
@@ -557,7 +628,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         DNSDomainName nextDomain = DNSDomainName.fromString( canonicalName ).info();
         DNSRRType nextType = question.qtype;
 
-        String msg = "Firing " + nextDomain.text + " " + nextType + " record sub-query " + subQueries.get() + " from query " + id;
+        String msg = "Got CNAME; firing " + nextDomain.text + " " + nextType + " record sub-query from query " + id;
         LOGGER.finest( msg );
         queryLog.log( msg );
         DNSQuestion cnameSubqueryQuestion = new DNSQuestion( nextDomain, nextType );
@@ -568,26 +639,52 @@ public class DNSRecursiveQuery extends DNSQuery {
 
 
     /**
-     * Transition action on IDLE::SUBQUERY_NS_IP or QUERY_NS::SUBQUERY_NS_IP, to initiate the sub-query.  The SUBQUERY_NS_IP event has a string attached with the
-     * hostname to query.
+     * Transition action on IDLE::SUBQUERY_NS_IP, SUB_QUERY_NS_IP::SUBQUERY_NS_IP, or QUERY_NS::SUBQUERY_NS_IP, to initiate the sub-query.  The SUBQUERY_NS_IP event has a string
+     * attached with the hostname to query.
      *
      * @param _transition The transition that triggered this action, in this case either IDLE::SUBQUERY_NS_IP or QUERY_NS::SUBQUERY_NS_IP.
      * @param _event The event that triggered this action, in this case, always SUBQUERY_NS_IP.
      */
     private void initiateNSIPSubquery( final FSMTransition<State, Event> _transition, FSMEvent<Event> _event  ) {
 
-        // send off one or two sub-queries to get the IP address (v4 or v6) of the DNS server...
+        // set up the count of subqueries...
+        nsIPsubQueries.set( (resolver.useIPv4() && resolver.useIPv6()) ? 2 : 1 );
+
+        // set up to send off our queries...
+        nsIPv4Addresses.clear();
+        nsIPv6Addresses.clear();
         String dnsHost = (String) _event.getData();
         DNSDomainName dnsDomainName = DNSDomainName.fromString( dnsHost ).info();
-        DNSRRType nextType = question.qtype;
 
-        String msg = "Firing " + nextDomain.text + " " + nextType + " record sub-query " + subQueries.get() + " from query " + id;
-        LOGGER.finest( msg );
-        queryLog.log( msg );
-        DNSQuestion cnameSubqueryQuestion = new DNSQuestion( nextDomain, nextType );
-        DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, cnameSubqueryQuestion, resolver.getNextID(),
-                this::handleCNAMESubqueryResponse );
-        recursiveQuery.initiate();
+        // if we're using IPv4, query for "A" records...
+        if( resolver.useIPv4() ) {
+
+            // handle the logging...
+            String msg = "Firing " + dnsDomainName.text + " A record sub-query from query " + id;
+            LOGGER.finest( msg );
+            queryLog.log( msg );
+
+            // and then the actual subquery...
+            DNSQuestion question = new DNSQuestion( dnsDomainName, DNSRRType.A );
+            DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, question, resolver.getNextID(),
+                    this::handleNSIPSubqueryResponse );
+            recursiveQuery.initiate();
+        }
+
+        // if we're using IPv6, query for "AAAA" records...
+        if( resolver.useIPv6() ) {
+
+            // handle the logging...
+            String msg = "Firing " + dnsDomainName.text + " AAAA record sub-query from query " + id;
+            LOGGER.finest( msg );
+            queryLog.log( msg );
+
+            // and then the actual subquery...
+            DNSQuestion question = new DNSQuestion( dnsDomainName, DNSRRType.AAAA );
+            DNSRecursiveQuery recursiveQuery = new DNSRecursiveQuery( resolver, cache, nio, executor, activeQueries, question, resolver.getNextID(),
+                    this::handleNSIPSubqueryResponse );
+            recursiveQuery.initiate();
+        }
     }
 
 
@@ -766,11 +863,12 @@ public class DNSRecursiveQuery extends DNSQuery {
         spec.setStateOnEntryAction( State.ANSWER_TERMINATION,         this::shutdown    );
 
         // add all the FSM state transitions for our FSM...
-        spec.addTransition( State.IDLE,            Event.SUBQUERY_CNAME,         this::initiateCNAMESubquery,      State.SUB_QUERY_CNAME      );
-        spec.addTransition( State.QUERY_NS,        Event.SUBQUERY_CNAME,         this::initiateCNAMESubquery,      State.SUB_QUERY_CNAME      );
-        spec.addTransition( State.SUB_QUERY_CNAME, Event.SUBQUERY_CNAME,         this::initiateCNAMESubquery,      State.SUB_QUERY_CNAME      );
-        spec.addTransition( State.IDLE,            Event.SUBQUERY_NS_IP,      null,      State.SUB_QUERY_NS_IP      );
-        spec.addTransition( State.QUERY_NS,        Event.SUBQUERY_NS_IP,      null,      State.SUB_QUERY_NS_IP      );
+        spec.addTransition( State.IDLE,            Event.SUBQUERY_CNAME,      this::initiateCNAMESubquery,      State.SUB_QUERY_CNAME      );
+        spec.addTransition( State.QUERY_NS,        Event.SUBQUERY_CNAME,      this::initiateCNAMESubquery,      State.SUB_QUERY_CNAME      );
+        spec.addTransition( State.SUB_QUERY_CNAME, Event.SUBQUERY_CNAME,      this::initiateCNAMESubquery,      State.SUB_QUERY_CNAME      );
+        spec.addTransition( State.IDLE,            Event.SUBQUERY_NS_IP,      this::initiateNSIPSubquery,       State.SUB_QUERY_NS_IP      );
+        spec.addTransition( State.QUERY_NS,        Event.SUBQUERY_NS_IP,      this::initiateNSIPSubquery,       State.SUB_QUERY_NS_IP      );
+        spec.addTransition( State.SUB_QUERY_NS_IP, Event.SUBQUERY_NS_IP,      this::initiateNSIPSubquery,       State.SUB_QUERY_NS_IP      );
         spec.addTransition( State.IDLE,            Event.FINAL_ANSWER,        this::notifyAnswer,               State.ANSWER_TERMINATION   );
         spec.addTransition( State.QUERY_NS,        Event.FINAL_ANSWER,        this::notifyAnswer,               State.ANSWER_TERMINATION   );
         spec.addTransition( State.SUB_QUERY_CNAME, Event.FINAL_ANSWER,        this::notifyAnswer,               State.ANSWER_TERMINATION   );
@@ -791,6 +889,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         spec.addEventTransform( Event.GOT_ANSWER,        this::answerCheck      );
         spec.addEventTransform( Event.INITIATE_NS_QUERY, this::ensureNameServer );
         spec.addEventTransform( Event.QUERY_NS_FAIL,     this::ensureNameServer );
+        spec.addEventTransform( Event.TRUNCATED,         this::ensureNameServer );
         spec.addEventTransform( Event.NO_NS_IP,          this::ensureNameServer );
         spec.addEventTransform( Event.GOT_NS_IP,         this::ensureNameServer );
 
