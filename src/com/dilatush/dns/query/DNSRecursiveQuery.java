@@ -309,11 +309,11 @@ public class DNSRecursiveQuery extends DNSQuery {
             return;
         }
 
-        // if the response was authoritative, fire off a NS_ANSWER event with attached message...
-        if( responseMessage.authoritativeAnswer) {
+        // if the response was OK, fire off a NS_ANSWER event with attached message...
+        if( responseMessage.responseCode == OK ) {
 
             // log it...
-            msg = "Received authoritative response: " + responseMessage;
+            msg = "Received authoritative response";
             queryLog.log( msg );
             LOGGER.finer( msg );
 
@@ -325,7 +325,7 @@ public class DNSRecursiveQuery extends DNSQuery {
         // in all other cases, we had a failure of some kind; fire off a QUERY_NS_FAIL event...
 
         // log it...
-        msg = "Received unusable response: " + responseMessage;
+        msg = "Received unusable response";
         queryLog.log( msg );
         LOGGER.finer( msg );
 
@@ -746,6 +746,14 @@ public class DNSRecursiveQuery extends DNSQuery {
      * @param _event The event that triggered this action.
      */
     private void notifyAnswer( final FSMTransition<State, Event> _transition, FSMEvent<Event> _event ) {
+
+        // build our response message...
+        DNSMessage.Builder builder = new DNSMessage.Builder();
+        builder.addQuestion( question );
+        answers.forEach( builder::addAnswer );
+        builder.setResponse( true );
+        builder.setAuthoritativeAnswer( true );
+        responseMessage = builder.getMessage();
 
         // send the results, and then we're done...
         handler.accept( queryOutcome.ok( new QueryResult( queryMessage, responseMessage, queryLog )) );

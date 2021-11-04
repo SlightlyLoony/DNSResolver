@@ -148,7 +148,7 @@ public class DNSCache {
             return _queryMessage.getSyntheticOKResponse( new ArrayList<>( 0 ) );
 
         // if we can resolve this query from the cache, return the response with all the answers...
-        List<DNSResourceRecord> answers = resolveAnswers( _queryMessage.getQuestion() );
+        List<DNSResourceRecord> answers = resolveAnswers( _queryMessage );
         if( answers.size() > 0 )
             return _queryMessage.getSyntheticOKResponse( answers );
 
@@ -160,7 +160,13 @@ public class DNSCache {
         DNSDomainName nsSearchDomain = _queryMessage.getQuestion().qname.parent();
         List<DNSResourceRecord> nameServers;
         do {
-            nameServers = resolveAnswers( new DNSQuestion( nsSearchDomain, NS ) );
+            DNSMessage.Builder builder = new DNSMessage.Builder();
+            builder
+                    .setOpCode(   DNSOpCode.QUERY                       )
+                    .setRecurse(  false                                 )
+                    .setId(       1                                     )
+                    .addQuestion( new DNSQuestion( nsSearchDomain, NS ) );
+            nameServers = resolveAnswers( builder.getMessage() );
             if( nameServers.size() == 0 ) {
                 if( nsSearchDomain.isRoot() ) {
                     if( !updateRootHints() )
@@ -209,18 +215,21 @@ public class DNSCache {
      * Attempt to find answers in the cache for the given question, including resolving any CNAME chain.  If answers are found, the returned list of resource records contains
      * them (including any CNAME chain).  Otherwise, an empty list is returned.
      *
-     * @param _question The question to be resolved from cache.
+     * @param _query The query containing the question to be resolved from cache.
      * @return The answers found in the cache, which may be none.
      */
-    public List<DNSResourceRecord> resolveAnswers( final DNSQuestion _question ) {
+    public List<DNSResourceRecord> resolveAnswers( final DNSMessage _query ) {
 
-        Checks.required( _question );
+        Checks.required( _query );
+
+        // save our question...
+        DNSQuestion question = _query.getQuestion();
 
         // make a place to stuff our answers...
         List<DNSResourceRecord> answers = new ArrayList<>();
 
         // get anything the cache might have from the domain we're looking for...
-        List<DNSResourceRecord> cached = get( _question.qname );
+        List<DNSResourceRecord> cached = get( question.qname );
 
         // if we got nothing at all back, bail out negatively...
         if( cached.size() == 0 )
@@ -230,7 +239,7 @@ public class DNSCache {
         cached.forEach( (rr) -> {
 
             // if the cached record matches the class and type in the question, stuff it directly into the answers...
-            if( (rr.klass == _question.qclass) && (rr.type == _question.qtype) )
+            if( (rr.klass == question.qclass) && (rr.type == question.qtype) )
                 answers.add( rr );
 
             // if it's a CNAME, and it's the only record we got, then we need to resolve the chain (which could be arbitrarily long)...
@@ -252,11 +261,11 @@ public class DNSCache {
                 // so now we see if the chain cache has any of the kinds of records we actually want, and if so we add them to the CNAME chain...
                 int startSize = cnameChain.size();   // remember how big the CNAME chain was before we started...
                 chainCache.stream()
-                        .filter(  (arr) -> (arr.klass == _question.qclass) && (arr.type == _question.qtype) )
+                        .filter(  (arr) -> (arr.klass == question.qclass) && (arr.type == question.qtype) )
                         .forEach( cnameChain::add );
 
-                // if we got at least one of the record type we actually want, then dump the CNAME chain into our answers...
-                if( startSize < (cnameChain).size() )
+                // if we got at least one of the record type we actually want, or if this is a recursive query, then dump the CNAME chain into our answers...
+                if( !_query.recurse || (startSize < (cnameChain).size()) )
                     answers.addAll( cnameChain );
             }
         } );

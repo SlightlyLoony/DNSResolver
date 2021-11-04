@@ -29,17 +29,27 @@ public class Test {
 
         DNSResolver resolver = DNSResolver.getDefaultRecursiveResolver();
 
-        DNSQuestion question = new DNSQuestion( DNSDomainName.fromString( "www.cnn.com" ).info(), DNSRRType.A );
+        DNSQuestion question = new DNSQuestion( DNSDomainName.fromString( "www.state.gov" ).info(), DNSRRType.A );
 
         resolver.query( question, Test::handler );
 
-        sleep( 10000 );
+        sleep( 3000 );
+//
+//        resolver.query( question, Test::handler2 );
+//
+//        sleep( 100000 );
 
         breakpoint();
     }
 
 
     private static void handler( Outcome<DNSQuery.QueryResult> _result ) {
+        LOGGER.log( Level.INFO, _result.info().log().toString() );
+        breakpoint();
+    }
+
+
+    private static void handler2( Outcome<DNSQuery.QueryResult> _result ) {
         LOGGER.log( Level.INFO, _result.info().log().toString() );
         breakpoint();
     }
