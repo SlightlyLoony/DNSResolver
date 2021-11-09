@@ -29,17 +29,19 @@ public class Test {
 
         DNSResolver resolver = DNSResolver.getDefaultRecursiveResolver();
 
-        DNSQuestion question = new DNSQuestion( DNSDomainName.fromString( "www.state.gov" ).info(), DNSRRType.A );
+        DNSQuestion question = new DNSQuestion( DNSDomainName.fromString( "turner-tls.map.fastly.net" ).info(), DNSRRType.NS );
 
         resolver.query( question, Test::handler );
 
-        sleep( 3000 );
+        while( true ) {
+            sleep( 1000 );
+            breakpoint();
+        }
 //
 //        resolver.query( question, Test::handler2 );
 //
 //        sleep( 100000 );
 
-        breakpoint();
     }
 
 

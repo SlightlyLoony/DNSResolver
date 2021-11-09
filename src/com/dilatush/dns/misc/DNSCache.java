@@ -129,13 +129,18 @@ public class DNSCache {
      *     servers.  In all cases, the response code will be {@link DNSResponseCode#OK}, there will be no answers, the name servers found will be in the authorities, and if
      *     the IP addresses of the name servers are in the cache, they will be in the additional records.</li>
      * </ul>
+     * <p>Queries for {@link DNSRRType#ANY} are handled specially, as there's no way for the cache to "know" if the cache's contents accurately represent the results of an ANY
+     * query.  The {@code _resolveAny} parameter controls how this call responds to an ANY query.  If it is {@code false}, it responds with response code of REFUSED if recursion
+     * is requested, or name servers if not.  If the parameter is {@code true}, it responds just as it would with any other query.  The idea is that you'd use the {@code true}
+     * parameter only immediately after querying for ANY and refreshing the cache.</p>
      * Note that if the query is somehow malformed, the response code will be {@link DNSResponseCode#FORMAT_ERROR}, and there will be no answers, authorities, or additional
      * records.  Also, if root hints cannot be downloaded, a {@link DNSResponseCode#SERVER_FAILURE} will be returned.
      *
      * @param _queryMessage The {@link DNSMessage} containing the query to be resolved (if possible) from the cache.
+     * @param _resolveAny {@code true} if queries with type ANY should be resolved
      * @return The {@link DNSMessage} containing the result of the attempted resolution from cache.
      */
-    public DNSMessage resolve( final DNSMessage _queryMessage ) {
+    public DNSMessage resolve( final DNSMessage _queryMessage, final boolean _resolveAny ) {
 
         Checks.required( _queryMessage );
 
@@ -143,21 +148,25 @@ public class DNSCache {
         if( _queryMessage.isResponse || (_queryMessage.questions.size() == 0) || (_queryMessage.getQuestion().qtype == DNSRRType.UNIMPLEMENTED) )
             return _queryMessage.getSyntheticNotOKResponse( FORMAT_ERROR );
 
-        // if the query is for type ANY, we'll fail, because we can't tell if the cache has all records...
-        if( _queryMessage.getQuestion().qtype == ANY )
-            return _queryMessage.getSyntheticOKResponse( new ArrayList<>( 0 ) );
+        // if the query is for type ANY, and recursion is requested, we'll fail, because we can't tell if the cache has all records...
+        if( _queryMessage.recurse && (_queryMessage.getQuestion().qtype == ANY) )
+                return _queryMessage.getSyntheticNotOKResponse( REFUSED );
 
-        // if we can resolve this query from the cache, return the response with all the answers...
-        List<DNSResourceRecord> answers = resolveAnswers( _queryMessage );
-        if( answers.size() > 0 )
-            return _queryMessage.getSyntheticOKResponse( answers );
+        // if we have a non-ANY query, or we have an ANY query, and we're resolving ANY queries...
+        if( (_queryMessage.getQuestion().qtype != ANY) || _resolveAny ) {
+
+            // if we can resolve this query from the cache, return the response with all the answers...
+            List<DNSResourceRecord> answers = resolveAnswers( _queryMessage );
+            if( answers.size() > 0 )
+                return _queryMessage.getSyntheticOKResponse( answers );
+        }
 
         // since we don't have any answers, if the query requested recursion, we leave with a NAME_ERROR...
         if( _queryMessage.recurse )
             return _queryMessage.getSyntheticNotOKResponse( NAME_ERROR );
 
         // if we get here, then we're answering without recursion, and we couldn't directly resolve the query - time to look for name servers...
-        DNSDomainName nsSearchDomain = _queryMessage.getQuestion().qname.parent();
+        DNSDomainName nsSearchDomain = _queryMessage.getQuestion().qname;
         List<DNSResourceRecord> nameServers;
         do {
             DNSMessage.Builder builder = new DNSMessage.Builder();
@@ -200,6 +209,36 @@ public class DNSCache {
     }
 
 
+    /**
+     * Attempts to resolve the given query message, and returns the result in a synthetic response message.  Failure to resolve from the cache is indicated by a response code of
+     * {@link DNSResponseCode#NAME_ERROR}.  The intent of this method is to provide results from the cache, if possible, that closely resemble the results of the same query
+     * message sent to a DNS server.  The results are quite different depending on whether the query message requests recursion:
+     * <ul>
+     *     <li>Recursion requested: The cache is searched for the answers to the question contained in the query.  If the cache contains an answer to the question in the query
+     *     (including resolving any CNAME chain), then the response code is {@link DNSResponseCode#OK} and the answers contain the resource records found.  Otherwise, the
+     *     response code is {@link DNSResponseCode#NAME_ERROR} and no resource records are returned.</li>
+     *     <li>No recursion requested: First the cache is searched for the answers to the question contained in the query.  If the cache contains an answer to the question in
+     *     the query (including resolving any CNAME chain), then the response code is {@link DNSResponseCode#OK} and the answers contain the resource records found.  Otherwise,
+     *     the cache is searched for the most specific name server entries it can find.  At worst case, this will be the root name servers (from the root hints file).  If the
+     *     cache has more specific name server entries, they will be used.  For example, if the original question was for A records from "www.bogus.com", and the cache had
+     *     no such records, first it will search for name servers for "bogus.com", then for "com", and only if both of those have no results will it return the root name
+     *     servers.  In all cases, the response code will be {@link DNSResponseCode#OK}, there will be no answers, the name servers found will be in the authorities, and if
+     *     the IP addresses of the name servers are in the cache, they will be in the additional records.</li>
+     * </ul>
+     * <p>Queries for {@link DNSRRType#ANY} are handled specially, as there's no way for the cache to "know" if the cache's contents accurately represent the results of an ANY
+     * query.  To handle that, this method responds to any ANY query with response code of REFUSED if the query is recursive, or name servers if no recursion.  See
+     * {@link #resolve(DNSMessage,boolean)} for an alternative.</p>
+     * Note that if the query is somehow malformed, the response code will be {@link DNSResponseCode#FORMAT_ERROR}, and there will be no answers, authorities, or additional
+     * records.  Also, if root hints cannot be downloaded, a {@link DNSResponseCode#SERVER_FAILURE} will be returned.
+     *
+     * @param _queryMessage The {@link DNSMessage} containing the query to be resolved (if possible) from the cache.
+     * @return The {@link DNSMessage} containing the result of the attempted resolution from cache.
+     */
+    public DNSMessage resolve( final DNSMessage _queryMessage ) {
+        return resolve( _queryMessage, false );
+    }
+
+
     private boolean updateRootHints() {
         Outcome<List<DNSResourceRecord>> rho = rootHints.current();
         if( rho.notOk() ) {
@@ -238,8 +277,8 @@ public class DNSCache {
         // iterate over the cached records to see if any of them match what we're looking for, or match a CNAME that might point to what we need...
         cached.forEach( (rr) -> {
 
-            // if the cached record matches the class and type in the question, stuff it directly into the answers...
-            if( (rr.klass == question.qclass) && (rr.type == question.qtype) )
+            // if our question is type ANY, or if the cached record matches the class and type in the question, stuff it directly into the answers...
+            if( (rr.klass == question.qclass) && ((question.qtype == ANY) || (rr.type == question.qtype)) )
                 answers.add( rr );
 
             // if it's a CNAME, and it's the only record we got, then we need to resolve the chain (which could be arbitrarily long)...
