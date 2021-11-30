@@ -54,24 +54,24 @@ public class SyncAPIExample {
 
 
     private static void resolve( final DNSResolverAPI _api ) {
-//
-//        // get the IPv4 addresses for a few FQDNs and print the results...
-//        resolveIPv4( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
-//
-//        // get the IPv6 addresses for a few FQDNs and print the results...
-//        resolveIPv6( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
-//
-//        // get the IP addresses for a few FQDNs and print the results...
-//        resolveIP( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
+
+        // get the IPv4 addresses for a few FQDNs and print the results...
+        resolveIPv4( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
+
+        // get the IPv6 addresses for a few FQDNs and print the results...
+        resolveIPv6( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
+
+        // get the IP addresses for a few FQDNs and print the results...
+        resolveIP( _api, "yahoo.com", "www.cnn.com", "ppp.cnn.com" );
 
         // get the name servers for some FQDNs and print the results...
         resolveNameServers( _api, "yahoo.com", "www.cnn.com", "qqq.cnn.com" );
 
-//        // get the text for some FQDNs and print the results...
-//        resolveText( _api, "yahoo.com", "www.cnn.com", "cnn.com", "google.com", "qqq.cnn.com" );
-//
-//        // get the resource records for some FQDNs and print the results...
-//        resolve( _api, "yahoo.com", "www.cnn.com", "cnn.com", "google.com", "qqq.cnn.com" );
+        // get the text for some FQDNs and print the results...
+        resolveText( _api, "yahoo.com", "www.cnn.com", "cnn.com", "google.com", "qqq.cnn.com" );
+
+        // get the resource records for some FQDNs and print the results...
+        resolve( _api, "yahoo.com", "www.cnn.com", "cnn.com", "google.com", "qqq.cnn.com" );
     }
 
 

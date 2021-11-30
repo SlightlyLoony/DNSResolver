@@ -188,15 +188,18 @@ public class DNSCache {
         // now we need to find the IP addresses of the name servers we found, if we have them...
         List<DNSResourceRecord> nameServersIPs = new ArrayList<>();
         nameServers.forEach( (rr) -> {
-            NS ns = ((NS)rr);
-            DNSDomainName nsdn = ns.nameServer;
-            nameServersIPs.addAll(
-                    switch( ipVersion ) {
-                        case IPv4    -> get( nsdn, A       );
-                        case IPv6    -> get( nsdn, AAAA    );
-                        case IPvBoth -> get( nsdn, A, AAAA );
-                    }
-            );
+
+            // we do this because the query above MIGHT return a CNAME...
+            if( rr instanceof NS ns ) {
+                DNSDomainName nsdn = ns.nameServer;
+                nameServersIPs.addAll(
+                        switch( ipVersion ) {
+                            case IPv4 -> get( nsdn, A );
+                            case IPv6 -> get( nsdn, AAAA );
+                            case IPvBoth -> get( nsdn, A, AAAA );
+                        }
+                );
+            }
         } );
 
         // if we get here, we have at least one name server, and possibly some CNAME records; normalize that...

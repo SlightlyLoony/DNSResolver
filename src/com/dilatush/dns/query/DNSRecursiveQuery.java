@@ -440,6 +440,14 @@ public class DNSRecursiveQuery extends DNSQuery {
             // otherwise, update the DNS cache...
             updateCacheFromMessage( msg );
 
+            // if we got an authoritative response with no answers, we're done...
+            if( msg.authoritativeAnswer && msg.answers.isEmpty() ) {
+                String logMsg = "Authoritative response with no answers";
+                LOGGER.log( SEVERE, logMsg );
+                queryLog.log( logMsg );
+                return _fsm.event( Event.GOT_ANSWER, msg );
+            }
+
             // if the attached message is an authoritative response, then we DO want to resolve ANY queries...
             resolveAny = msg.authoritativeAnswer;
         }
